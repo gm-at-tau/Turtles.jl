@@ -10,7 +10,7 @@ using Test
 
 function gcc(filename::String, code::String)
         write("$filename.c", code)
-	# [TODO] Compile with Clang_jll
+        # [TODO] Compile with Clang_jll
         CFLAGS = `-Wno-unused-function` # `-Wall -Wextra`
         run(`gcc -O2 $CFLAGS -c $filename.c -o $filename.o`)
         run(`rm $filename.c $filename.o`)
@@ -71,7 +71,10 @@ end
                 Turtles.defer(if (i > 0)
                         i = i + 1 # N.B. immutable return
                 end)
-                i = i + 2
+                i = i + IR.block() do blk_i
+			i = i + 5
+			blk_i.return(2)
+                end
                 if i == 4
                         blk.return(i + 1)
                 end
@@ -87,7 +90,7 @@ include("../cases/peg.jl")
         integer = PEG.seq(digit, PEG.iter(PEG.alt(digit, '_')))
 
         @proc function digits(txt::IR.R{Ptr{UInt8}})
-		env := IR.local(PEG.t(0, txt))
+                env := IR.local(PEG.t(0, txt))
                 ok := PEG.reader(integer, env)
                 env.idx
         end
