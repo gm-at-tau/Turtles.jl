@@ -56,7 +56,7 @@ function setup(f::Function, lp::Free)
 end
 
 setup(lp::Pipe, ct::NamedTuple) = foldl((st, r) -> setup(r, st), lp.vec; init=ct)
-setup(lp::Take, ct::NamedTuple) = Base.setindex(ct, C.local(0), lp.name)
+setup(lp::Take, ct::NamedTuple) = Base.setindex(ct, IR.local(0), lp.name)
 setup(::Free, ct::NamedTuple) = ct
 
 # Loop
@@ -66,7 +66,7 @@ setup(::Free, ct::NamedTuple) = ct
         cc(Base.setindex(ct, f, lp.name))
 end
 
-loop(lp::If, ct, cc) = C.if(lp.iftrue(ct), cc(ct))
+loop(lp::If, ct, cc) = IR.if(lp.iftrue(ct), cc(ct))
 
 function loop(lp::Take, ct, cc)
         local ctr = getproperty(ct, lp.name)
@@ -93,7 +93,7 @@ function loop(cc::Function, lp::Free)
 end
 
 function loop(lp::Iter, ct, cc)
-        C.for(lp.v) do i
+        IR.for(lp.v) do i
                 cc(Base.setindex(ct, i, :it))
         end
 end

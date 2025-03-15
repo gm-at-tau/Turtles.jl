@@ -43,7 +43,7 @@ function _code(q::Expr)
         elseif Meta.isexpr(q, :if) || Meta.isexpr(q, :elseif)
                 _if(_code.(q.args)...)
         elseif Meta.isexpr(q, :while)
-                throw("use `$(C.while)` instead")
+                throw("use `$(IR.while)` instead")
         elseif Meta.isexpr(q, :function)
                 local args, body = q.args
                 Expr(:function, args, _code(body))
@@ -70,11 +70,11 @@ function _proc(q)
 end
 
 macro proc(ret, q)
-        ty = C.type(eval(ret))
+        ty = IR.type(eval(ret))
         name, sig, blk = _proc(q)
-        cell = C.R{ty}()
+        cell = IR.R{ty}()
         r = quote
-                $name = $(C.proc)($(QuoteNode(name)), $(Expr(:function, sig, Expr(:block, cell))))
+                $name = $(IR.proc)($(QuoteNode(name)), $(Expr(:function, sig, Expr(:block, cell))))
                 $name.__block__[] = ($(Expr(:function, sig, blk)))($name.__cells__...)
         end
         return esc(r)
@@ -82,7 +82,7 @@ end
 
 macro proc(q)
         name, sig, blk = _proc(q)
-        r = :($name = $(C.proc)($(QuoteNode(name)), $(Expr(:function, sig, blk))))
+        r = :($name = $(IR.proc)($(QuoteNode(name)), $(Expr(:function, sig, blk))))
         return esc(r)
 end
 

@@ -45,13 +45,13 @@ Base.convert(::Type{Free}, r::Char) = char(r)
 
 # Reader
 
-const t = C.struct(:peg_t,
+const t = IR.struct(:peg_t,
         :idx => Int,
         :txt => Ptr{UInt8},
 )
 
 function reader(peg::Seq, env)
-        @code C.block() do blk
+        @code IR.block() do blk
                 () := Turtles.stamp(peg.rules) do r
                         rt := reader(r, env)
                         if !rt
@@ -63,7 +63,7 @@ function reader(peg::Seq, env)
 end
 
 function reader(peg::Alt, env)
-        @code C.block() do blk
+        @code IR.block() do blk
                 () := Turtles.stamp(peg.alts) do r
                         rt := reader(r, env)
                         if rt
@@ -75,8 +75,8 @@ function reader(peg::Alt, env)
 end
 
 function reader(peg::Iter, env)
-        @code C.block() do blk
-                C.loop() do
+        @code IR.block() do blk
+                IR.loop() do
                         rt := reader(peg.it, env)
                         if !rt
                                 blk.return(true)
@@ -98,7 +98,7 @@ function reader(peg::CharSet, env)
 end
 
 function chars_reader(anychar, env)
-        @code C.block() do blk
+        @code IR.block() do blk
                 rt := env.txt[env.idx]
                 if !anychar(rt)
                         blk.return(false)

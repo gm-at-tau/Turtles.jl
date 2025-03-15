@@ -35,7 +35,7 @@ include("control.jl")
 include("pretty.jl")
 include("ssa.jl")
 
-function compile(c::C.Proc)
+function compile(c::IR.Proc)
         io = IOBuffer()
         print(io, "#include <stdbool.h>\n#include <stdint.h>\n")
         fwd::SSA.Forward = SSA.compile(c)
@@ -54,6 +54,6 @@ function compile(c::C.Proc)
         String(take!(io))
 end
 
-export @code, @proc, C, SSA, compile
+export @code, @proc, IR, SSA, compile
 
 end # module Turtles

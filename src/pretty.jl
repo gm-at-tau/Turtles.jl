@@ -7,7 +7,7 @@
 
 module PrettyPrint
 
-using ..C
+using ..IR
 
 INDENT = 0
 
@@ -18,10 +18,10 @@ function indent(f::Function)
         global INDENT -= 1
 end
 
-code(io::IO, c::C.Delay) = code(io, c.__delay__)
-code(io::IO, c::C.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
+code(io::IO, c::IR.Delay) = code(io, c.__delay__)
+code(io::IO, c::IR.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
 
-function code(io::IO, c::C.Blk)
+function code(io::IO, c::IR.Blk)
         print(io, "$(c.__lbl__):{")
         indent() do
                 newline(io)
@@ -31,22 +31,22 @@ function code(io::IO, c::C.Blk)
         print(io, "}")
 end
 
-typename(::Type{C.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types} = string("struct ", Tag)
+typename(::Type{IR.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types} = string("struct ", Tag)
 typename(::Type{Bool}) = "bool"
 typename(::Type{Nothing}) = "void"
 typename(::Type{T}) where {T<:Integer} = lowercase(string(T, "_t"))
 typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
 
-names(::Type{C.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types} = Fields::Tuple
+names(::Type{IR.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types} = Fields::Tuple
 names(::Type{T}) where {T} = [nothing]
 
-function code(io::IO, c::C.Node{T}) where {T}
-        if c.__keyword__ == C.CALL
+function code(io::IO, c::IR.Node{T}) where {T}
+        if c.__keyword__ == IR.CALL
                 print(io, c.__args__[1].__symbol__)
                 print(io, "(")
                 join(io, c.__args__[2:end], ", ")
                 print(io, ")")
-        elseif c.__keyword__ == C.INIT
+        elseif c.__keyword__ == IR.INIT
                 print(io, "($(typename(T))){ ")
                 if isempty(c.__args__)
                         print(io, "0")
@@ -62,10 +62,10 @@ function code(io::IO, c::C.Node{T}) where {T}
                 code(io, c.__args__[1])
                 print(io, ")")
         elseif length(c.__args__) == 2
-                if c.__keyword__ == C.FIELD
+                if c.__keyword__ == IR.FIELD
                         code(io, c.__args__[1])
                         print(io, ".$(c.__args__[2].__val__)")
-                elseif c.__keyword__ == C.INDEX
+                elseif c.__keyword__ == IR.INDEX
                         code(io, c.__args__[1])
                         print(io, "[")
                         code(io, c.__args__[2])
@@ -83,7 +83,7 @@ function code(io::IO, c::C.Node{T}) where {T}
         end
 end
 
-function code(io::IO, c::C.Ctl)
+function code(io::IO, c::IR.Ctl)
         print(io, "return:")
         code(io, c.__lbl__)
         print(io, " ")
@@ -91,18 +91,18 @@ function code(io::IO, c::C.Ctl)
         print(io, "; ")
 end
 
-function code(io::IO, c::C.Node{Nothing})
+function code(io::IO, c::IR.Node{Nothing})
         if c.__keyword__ == :←
                 print(io, c.__args__[1])
                 print(io, " = ")
                 print(io, c.__args__[2])
                 print(io, "; ")
-        elseif c.__keyword__ == C.FIELD
+        elseif c.__keyword__ == IR.FIELD
                 print(io, c.__args__[1])
                 print(io, ".$(c.__args__[2].__val__) = ")
                 code(io, c.__args__[3])
                 print(io, "; ")
-        elseif c.__keyword__ == C.INDEX
+        elseif c.__keyword__ == IR.INDEX
                 print(io, c.__args__[1])
                 print(io, "[")
                 code(io, c.__args__[2])
@@ -137,10 +137,10 @@ function code(io::IO, c::C.Node{Nothing})
         end
 end
 
-function code(io::IO, b::C.Bind)
+function code(io::IO, b::IR.Bind)
         local c = b
-        while c isa C.Bind
-                if C.isunit(c)
+        while c isa IR.Bind
+                if IR.isunit(c)
                         code(io, c.__val__)
                 else
                         print(io, c.__cell__)
@@ -156,7 +156,7 @@ function code(io::IO, b::C.Bind)
         code(io, c)
 end
 
-function code(io::IO, c::C.Proc)
+function code(io::IO, c::IR.Proc)
         print(io, "fn (")
         join(io, c.__cells__, ", ")
         print(io, ") ")
@@ -167,19 +167,19 @@ code(io::IO, c::M) = print(io, "m$(c.__id__)")
 code(io::IO, c::R) = print(io, "r$(c.__id__)")
 code(io::IO, c::L) = print(io, "L$(c.__id__)")
 
-for ty = C.TYPES
+for ty = IR.TYPES
         ty in (Ptr{UInt8}, Nothing) && continue
         @eval code(io::IO, c::CTE{$ty}) = print(io, c.__val__)
-        @eval code(io::IO, c::C.Init{$ty}) = print(io, c.__val__)
+        @eval code(io::IO, c::IR.Init{$ty}) = print(io, c.__val__)
 end
 
 code(::IO, ::CTE{Nothing}) = nothing
-code(io::IO, ::C.Init{Nothing}) = print(io, "{}")
+code(io::IO, ::IR.Init{Nothing}) = print(io, "{}")
 
 code(io::IO, c::CTE{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
-code(io::IO, c::C.Init{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
+code(io::IO, c::IR.Init{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
 
-Base.show(io::IO, c::C.Code) = code(io, c)
+Base.show(io::IO, c::IR.Code) = code(io, c)
 
 end # module PrettyPrint
 

@@ -5,7 +5,7 @@
 # Copyright (C) 2025 Gabriel Domingues <gm@mail.tau.ac.il>
 #
 
-module C
+module IR
 
 export V, R, M, L, CTE
 
@@ -300,7 +300,7 @@ end
 Notation.:←(c::M{T}, v::Code{T}) where {T} = Node{Nothing}(:←, [c, v])
 
 function Notation.:←(c::Node{T}, v::Code{T}) where {T}
-        @assert c.__args__[1] isa C.M
+        @assert c.__args__[1] isa M
         @assert c.__keyword__ in (FIELD, INDEX)
         Node{Nothing}(c.__keyword__, [c.__args__; v])
 end
@@ -342,4 +342,4 @@ Base.:&(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, rhs, lhs)
 Base.:⊻(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, !lhs, lhs)
 Base.:⊻(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, !rhs, rhs)
 
-end # module C
+end # module IR
