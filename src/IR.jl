@@ -138,30 +138,27 @@ end
 init(t::Code{T}) where {T<:Struct} = Init{T}(t)
 init(t::String) = Init{Ptr{UInt8}}(pointer(t))
 
-mutable struct Ret
-        type::Union{Type,Nothing}
-end
-
-(ret::Ret)(code) = ret(convert(Code, code))
-function (ret::Ret)(code::Code)
-        if isnothing(ret.type)
-                ret.type = type(code)
-        end
-        @assert ret.type == type(code) "returned `$(type(code))` expected `$(ret.type)`"
-        return code
-end
-
 function block(f::Function)
         local lbl = L()
-        local ret = Ret(nothing)
+        local rettype = Ref{Union{Type,Nothing}}(nothing)
+
+        ret(code::Any) = ret(convert(Code, code))
+        function ret(code::Code)
+                if isnothing(rettype[])
+                        rettype[] = type(code)
+                end
+                @assert rettype[] == type(code) "returned `$(type(code))` expected `$(rettype[])`"
+                return code
+        end
+
         local blk = (; var"return"=val -> Ctl(lbl, ret(val)))
         local val = Notation.apply(f, blk)
         if type(val) != Nothing
                 val = blk.return(val)
-        elseif isnothing(ret.type)
-                ret.type = Nothing
+        elseif isnothing(rettype[])
+                rettype[] = Nothing
         end
-        return Blk{ret.type}(lbl, val)
+        return Blk{rettype[]}(lbl, val)
 end
 
 function loop(f::Function)
