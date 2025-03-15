@@ -11,7 +11,8 @@ using Test
 function gcc(filename::String, code::String)
         write("$filename.c", code)
 	# [TODO] Compile with Clang_jll
-        run(`gcc $filename.c -c -o $filename.o`)
+        CFLAGS = `-Wno-unused-function` # `-Wall -Wextra`
+        run(`gcc -O2 $CFLAGS -c $filename.c -o $filename.o`)
         run(`rm $filename.c $filename.o`)
 end
 
