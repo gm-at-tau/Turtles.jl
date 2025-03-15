@@ -29,31 +29,35 @@ function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
         return Struct{tag,keys(t),Tuple{values(t)...}}()
 end
 
-Base.keys(c::Struct{Tag,Fields,Types}) where {Tag,Fields,Types} = Fields::Tuple
-
 # Language (IR)
 
-global COUNTER = 0
-function newid(x::Int)::UInt16
-        global COUNTER += x
+function newid()
+        COUNTER = 0
+        function ()
+                COUNTER += 1
+                return UInt16(COUNTER)
+        end
 end
 
+global newlabel = newid()
 struct L
         __id__::UInt16
-        L() = new(newid(1))
+        L() = new(newlabel())
 end
 
 abstract type V{T} <: Code{T} end
 
+global newregister = newid()
 struct R{T} <: V{T}
         __id__::UInt16
-        R{T}() where {T} = new{T}(newid(1))
+        R{T}() where {T} = new{T}(newregister())
         R{Nothing}() = new(0x0)
 end
 
+global newmutable = newid()
 struct M{T} <: V{T}
         __id__::UInt16
-        M{T}() where {T} = new{T}(newid(1))
+        M{T}() where {T} = new{T}(newmutable())
 end
 
 struct CTE{T} <: Code{T}
@@ -133,8 +137,6 @@ end
 
 init(t::Code{T}) where {T<:Struct} = Init{T}(t)
 init(t::String) = Init{Ptr{UInt8}}(pointer(t))
-
-isunit(t::Bind) = t.__cell__.__id__ == 0x0
 
 mutable struct Ret
         type::Union{Type,Nothing}

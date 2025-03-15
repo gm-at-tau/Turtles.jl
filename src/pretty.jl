@@ -138,7 +138,7 @@ end
 function code(io::IO, b::IR.Bind)
         local c = b
         while c isa IR.Bind
-                if IR.isunit(c)
+                if IR.type(c.__val__) == Nothing
                         code(io, c.__val__)
                 else
                         print(io, c.__cell__)
