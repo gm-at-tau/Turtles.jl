@@ -29,7 +29,7 @@ var"if"(bool::Bool, iftrue::Function, iffalse::Function) =
 
 end
 
-include("C.jl")
+include("IR.jl")
 include("macros.jl")
 include("control.jl")
 include("pretty.jl")
