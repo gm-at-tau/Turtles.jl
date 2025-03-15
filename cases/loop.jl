@@ -45,56 +45,54 @@ take(first; name=gensym(:first)) = Take(first, name)
 # Setup
 
 function setup(f::Function, lp::Free)
-        local ct = setup(lp, NamedTuple())
-        local fn = foldr(pairs(ct); init=f) do kv, cc
+        local nt = setup(lp, NamedTuple())
+        local fn = foldr(pairs(nt); init=f) do kv, k
                 (st) -> @code begin
                         a := kv[2]
-                        cc(Base.setindex(st, a, kv[1]))
+                        k(Base.setindex(st, a, kv[1]))
                 end
         end
         fn(NamedTuple())
 end
 
-setup(lp::Pipe, ct::NamedTuple) = foldl((st, r) -> setup(r, st), lp.vec; init=ct)
-setup(lp::Take, ct::NamedTuple) = Base.setindex(ct, IR.local(0), lp.name)
-setup(::Free, ct::NamedTuple) = ct
+setup(lp::Pipe, nt::NamedTuple) = foldl((st, r) -> setup(r, st), lp.vec; init=nt)
+setup(lp::Take, nt::NamedTuple) = Base.setindex(nt, IR.local(0), lp.name)
+setup(::Free, nt::NamedTuple) = nt
 
 # Loop
 
-@code function loop(lp::Fn, ct, cc)
-        f := lp.fn(ct)
-        cc(Base.setindex(ct, f, lp.name))
+@code function loop(lp::Fn, nt, k)
+        f := lp.fn(nt)
+        k(Base.setindex(nt, f, lp.name))
 end
 
-loop(lp::If, ct, cc) = IR.if(lp.iftrue(ct), cc(ct))
+loop(lp::If, nt::NamedTuple, k) = IR.if(lp.iftrue(nt), k(nt))
 
-function loop(lp::Take, ct, cc)
-        local ctr = getproperty(ct, lp.name)
-        @code begin
-                if ctr < lp.first
-                        index := ctr
-                        () := ctr = ctr + 1
-                        cc(Base.setindex(ct, index, lp.name))
-                end
+function loop(lp::Take, nt::NamedTuple, k)
+        local n = getproperty(nt, lp.name)
+        @code if n < lp.first
+                index := n
+                n = n + 1
+                k(Base.setindex(nt, index, lp.name))
         end
 end
 
-function loop(lp::Pipe, ct, cc)
-        local fn = foldr(lp.vec; init=cc) do r, tcc
-                (st) -> loop(r, st, tcc)
+function loop(lp::Pipe, nt::NamedTuple, k)
+        local fn = foldr(lp.vec; init=k) do r, k
+                (st) -> loop(r, st, k)
         end
-        fn(ct)
+        fn(nt)
 end
 
-function loop(cc::Function, lp::Free)
-        setup(lp) do ct
-                loop(lp, ct, cc)
+function loop(k::Function, lp::Free)
+        setup(lp) do nt
+                loop(lp, nt, k)
         end
 end
 
-function loop(lp::Iter, ct, cc)
+function loop(lp::Iter, nt::NamedTuple, k)
         IR.for(lp.v) do i
-                cc(Base.setindex(ct, i, :it))
+                k(Base.setindex(nt, i, :it))
         end
 end
 

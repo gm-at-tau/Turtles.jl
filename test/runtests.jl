@@ -106,7 +106,7 @@ include("../cases/loop.jl")
 
         @proc function even_squares(n::IR.R{Int})
                 a := IR.local(0)
-                () := Loop.loop(Loop.pipe(Loop.iter(n), esq)) do ct
+                Loop.loop(Loop.pipe(Loop.iter(n), esq)) do ct
                         a = a + ct.it
                 end
                 a

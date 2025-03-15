@@ -13,7 +13,7 @@ using ..Turtles
 
 @code function pow(x::IR.Code{Int}, n::IR.Code{Int})
         p := IR.local(x)
-        () := IR.for(n) do
+        IR.for(n) do
                 p = p * x
         end
         p
@@ -25,7 +25,7 @@ pow_unroll = IR.proc(:pow, (x::IR.R{Int}) -> pow(promote(x, 5)...))
 @code function gibonacci(x::IR.Code{Int}, y::IR.Code{Int}, n::IR.Code{Int})
         x := IR.local(x)
         y := IR.local(y)
-        () := IR.for(n) do
+        IR.for(n) do
                 z := x + y
                 x = y
                 y = z

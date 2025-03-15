@@ -52,7 +52,7 @@ const t = IR.struct(:peg_t,
 
 function reader(peg::Seq, env)
         @code IR.block() do blk
-                () := Turtles.stamp(peg.rules) do r
+                Turtles.stamp(peg.rules) do r
                         rt := reader(r, env)
                         if !rt
                                 blk.return(false)
@@ -64,7 +64,7 @@ end
 
 function reader(peg::Alt, env)
         @code IR.block() do blk
-                () := Turtles.stamp(peg.alts) do r
+                Turtles.stamp(peg.alts) do r
                         rt := reader(r, env)
                         if rt
                                 blk.return(true)

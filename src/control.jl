@@ -13,8 +13,8 @@ end
 stamp(body::Function, iter::AbstractVector) = Stamp(body=body, iter=iter)
 
 function Notation.bind(st::Stamp, f::Function)
-        foldr(st.iter; init=f()) do r, cc
-                Notation.bind(Notation.apply(st.body, r), () -> cc)
+        foldr(st.iter; init=f()) do r, k
+                Notation.bind(Notation.apply(st.body, r), () -> k)
         end
 end
 
