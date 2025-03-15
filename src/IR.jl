@@ -86,16 +86,16 @@ struct Blk{T} <: Code{T}
         __blk__::Code{Nothing}
 end
 
-struct Ctl <: Code{Nothing}
+struct Ret <: Code{Nothing}
         __lbl__::L
         __val__::Code
 end
 
-struct Delay <: Code{Nothing}
-        __delay__::Code
+struct Thunk <: Code{Nothing}
+        __blk__::Code
 end
 
-struct BreakContinue <: Code{Bool}
+struct BreakContinue <: Code{Nothing}
         __break__::Bool
 end
 
@@ -119,9 +119,9 @@ visit(t::Bind{T}, f::Function) where {T} =
         Bind(f(t.__val__), f(t.__cell__), f(t.__cont__))
 visit(t::Blk{T}, f::Function) where {T} =
         Blk{T}(t.__lbl__, f(t.__blk__))
-visit(t::Ctl, f::Function) =
-        Ctl(t.__lbl__, f(t.__val__))
-visit(t::Delay, f::Function) = Delay(f(t.__delay__))
+visit(t::Ret, f::Function) =
+        Ret(t.__lbl__, f(t.__val__))
+visit(t::Thunk, f::Function) = Thunk(f(t.__blk__))
 visit(t::BreakContinue, ::Function) = t
 visit(t::Proc{T,Ts}, ::Function) where {T,Ts} = t
 
@@ -151,7 +151,7 @@ function block(f::Function)
                 return code
         end
 
-        local blk = (; var"return"=val -> Ctl(lbl, ret(val)))
+        local blk = (; var"return"=val -> Ret(lbl, ret(val)))
         local val = Notation.apply(f, blk)
         if type(val) != Nothing
                 val = blk.return(val)
@@ -163,15 +163,15 @@ end
 
 function loop(f::Function)
         lbl = L()
-        blk = (; var"break"=Ctl(lbl, BreakContinue(true)),
-                var"continue"=Ctl(lbl, BreakContinue(false)))
-        Node{Nothing}(:loop, [Delay(Blk{Nothing}(lbl, Notation.apply(f, blk)))])
+        blk = (; var"break"=Ret(lbl, BreakContinue(true)),
+                var"continue"=Ret(lbl, BreakContinue(false)))
+        Node{Nothing}(:loop, [Thunk(Blk{Nothing}(lbl, Notation.apply(f, blk)))])
 end
 
 var"if"(c::Code{Bool}, iftrue::Code{Nothing}, iffalse::Code{Nothing}) =
-        Node{Nothing}(:if, [c, Delay(iftrue), Delay(iffalse)])
+        Node{Nothing}(:if, [c, Thunk(iftrue), Thunk(iffalse)])
 var"if"(c::Code{Bool}, iftrue::Code{Nothing}) =
-        Node{Nothing}(:if, [c, Delay(iftrue)])
+        Node{Nothing}(:if, [c, Thunk(iftrue)])
 
 var"if"(c::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
         block(blk -> var"if"(c, blk.return(iftrue), blk.return(iffalse)))

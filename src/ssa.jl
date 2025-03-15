@@ -23,7 +23,7 @@ reg(c::IR.Bind) = register(c)
 reg(c::IR.Node) = register(c)
 
 ssa(c::IR.Node) = IR.visit(c, reg)
-ssa(c::IR.Ctl) = IR.visit(c, reg)
+ssa(c::IR.Ret) = IR.visit(c, reg)
 
 struct Phi <: Function
         labels::Dict{L,V}
@@ -42,11 +42,11 @@ end
 		blk = IR.Blk{Nothing}(c.__lbl__, phi(c.__blk__))
                 Notation.bind(blk, () -> m)
         end)
-(phi::Phi)(c::IR.Ctl) =
+(phi::Phi)(c::IR.Ret) =
         let m = phi.labels[c.__lbl__]
                 m isa M || return c
                 ret = Notation.:←(m, phi(c.__val__))
-                Notation.bind(ret, () -> IR.Ctl(c.__lbl__, nothing))
+                Notation.bind(ret, () -> IR.Ret(c.__lbl__, nothing))
         end
 
 flat(c::IR.Code) = IR.visit(c, flat)
@@ -63,8 +63,8 @@ flat(c::IR.Node{T}) where {T} =
         hoist(flat.(c.__args__), (args) -> IR.Node{T}(c.__keyword__, args))
 flat(c::IR.Bind) =
         hoist(flat(c.__val__), (v) -> IR.Bind(v, c.__cell__, flat(c.__cont__)))
-flat(c::IR.Ctl) =
-        hoist(flat(c.__val__), (v) -> IR.Ctl(c.__lbl__, v))
+flat(c::IR.Ret) =
+        hoist(flat(c.__val__), (v) -> IR.Ret(c.__lbl__, v))
 
 translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(flat(ssa(c))))
 
@@ -112,7 +112,7 @@ function procedure(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
 end
 
 code(io::IO, c::IR.Code) = print(io, c)
-code(io::IO, c::IR.Delay) = code(io, c.__delay__)
+code(io::IO, c::IR.Thunk) = code(io, c.__blk__)
 
 function code(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
         procedure(io, c)
@@ -136,7 +136,7 @@ function code(io::IO, c::IR.Blk)
         print(io, "} $(c.__lbl__):; ")
 end
 
-function code(io::IO, c::IR.Ctl)
+function code(io::IO, c::IR.Ret)
         if c.__val__ isa IR.V
                 print(io, "return ")
                 code(io, c.__val__)

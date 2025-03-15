@@ -29,7 +29,7 @@ end
 
 (ls::OpenLabel)(c::IR.Code) = IR.visit(c, ls)
 (ls::OpenLabel)(c::IR.Blk) = (push!(ls.labels, c.__blk__); IR.visit(c, ls))
-function (ls::OpenLabel)(c::IR.Ctl)
+function (ls::OpenLabel)(c::IR.Ret)
         c.__lbl__ in ls.labels && return IR.visit(c, ls)
         ls.func(IR.visit(c, ls))
 end
@@ -46,7 +46,7 @@ function Notation.bind(df::Defer, f::Function)
                 # N.B. immutable return
                 Notation.bind(c.__val__, (v) ->
                         Notation.bind(df.onexit, () ->
-                                IR.Ctl(c.__lbl__, v)))
+                                IR.Ret(c.__lbl__, v)))
         end
         Notation.bind(openlabel(Notation.apply(f)), (v) ->
                 Notation.bind(df.onexit, () -> v))

@@ -18,7 +18,7 @@ function indent(f::Function)
         global INDENT -= 1
 end
 
-code(io::IO, c::IR.Delay) = code(io, c.__delay__)
+code(io::IO, c::IR.Thunk) = code(io, c.__blk__)
 code(io::IO, c::IR.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
 
 function code(io::IO, c::IR.Blk)
@@ -83,7 +83,7 @@ function code(io::IO, c::IR.Node{T}) where {T}
         end
 end
 
-function code(io::IO, c::IR.Ctl)
+function code(io::IO, c::IR.Ret)
         print(io, "return:$(c.__lbl__) ")
         code(io, c.__val__)
         print(io, "; ")
