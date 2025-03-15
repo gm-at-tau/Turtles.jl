@@ -12,9 +12,10 @@ export V, R, M, L, CTE
 using ..Turtles
 using ..Notation
 
-# Language Constructs
 
 abstract type Code{T} end
+
+# Types
 
 type(::Type{<:Code{T}}) where {T} = T
 type(::C) where {T,C<:Code{T}} = T
@@ -30,36 +31,16 @@ end
 
 Base.keys(c::Struct{Tag,Fields,Types}) where {Tag,Fields,Types} = Fields::Tuple
 
-struct CTE{T} <: Code{T}
-        __val__::T
-end
-visit(t::CTE, ::Function) = t
-
-for ty = TYPES
-        @eval cte(t::$ty) = CTE{$ty}(t)
-end
-
-struct Init{T} <: Code{T}
-        __val__::T
-end
-visit(t::Init, ::Function) = t
-
-for ty = TYPES
-        @eval init(t::$ty) = Init{$ty}(t)
-end
-init(t::Code{T}) where {T<:Struct} = Init{T}(t)
-init(t::String) = Init{Ptr{UInt8}}(pointer(t))
-
-struct Node{T} <: Code{T}
-        __keyword__::Symbol
-        __args__::Vector{Code}
-end
-visit(t::Node{T}, f::Function) where {T} =
-        Node{T}(t.__keyword__, f.(t.__args__))
+# Language (IR)
 
 global COUNTER = 0
 function newid(x::Int)::UInt16
         global COUNTER += x
+end
+
+struct L
+        __id__::UInt16
+        L() = new(newid(1))
 end
 
 abstract type V{T} <: Code{T} end
@@ -69,13 +50,24 @@ struct R{T} <: V{T}
         R{T}() where {T} = new{T}(newid(1))
         R{Nothing}() = new(0x0)
 end
-visit(t::R, ::Function) = t
 
 struct M{T} <: V{T}
         __id__::UInt16
         M{T}() where {T} = new{T}(newid(1))
 end
-visit(t::M, ::Function) = t
+
+struct CTE{T} <: Code{T}
+        __val__::T
+end
+
+struct Init{T} <: Code{T}
+        __val__::T
+end
+
+struct Node{T} <: Code{T}
+        __keyword__::Symbol
+        __args__::Vector{Code}
+end
 
 struct Bind{T} <: Code{T}
         __val__::Code
@@ -84,30 +76,65 @@ struct Bind{T} <: Code{T}
         Bind(val::Code, cell::V, cont::Code{T}) where {T} = new{T}(val, cell, cont)
         Bind(val::Code, ::V, ::Nothing) = val
 end
-visit(t::Bind{T}, f::Function) where {T} =
-        Bind(f(t.__val__), f(t.__cell__), f(t.__cont__))
-
-isunit(t::Bind) = t.__cell__.__id__ == 0x0
-
-struct L <: Code{Nothing}
-        __id__::UInt16
-        L() = new(newid(1))
-end
-visit(t::L, ::Function) = t
 
 struct Blk{T} <: Code{T}
         __lbl__::L
         __blk__::Code{Nothing}
 end
-visit(t::Blk{T}, f::Function) where {T} =
-        Blk{T}(f(t.__lbl__), f(t.__blk__))
 
 struct Ctl <: Code{Nothing}
         __lbl__::L
         __val__::Code
 end
+
+struct Delay <: Code{Nothing}
+        __delay__::Code
+end
+
+struct BreakContinue <: Code{Bool}
+        __break__::Bool
+end
+
+struct Proc{T,Ts<:Tuple} <: Code{Function}
+        __symbol__::Symbol
+        __cells__::Ts
+        __block__::Ref{Blk{T}}
+        Proc(s, cells::Ts, r::Blk{T}) where {T,Ts} =
+                new{T,Ts}(s, cells, Ref{Blk{T}}(r))
+end
+
+function visit end
+
+visit(t::CTE, ::Function) = t
+visit(t::Init, ::Function) = t
+visit(t::Node{T}, f::Function) where {T} =
+        Node{T}(t.__keyword__, f.(t.__args__))
+visit(t::R, ::Function) = t
+visit(t::M, ::Function) = t
+visit(t::Bind{T}, f::Function) where {T} =
+        Bind(f(t.__val__), f(t.__cell__), f(t.__cont__))
+visit(t::Blk{T}, f::Function) where {T} =
+        Blk{T}(t.__lbl__, f(t.__blk__))
 visit(t::Ctl, f::Function) =
         Ctl(t.__lbl__, f(t.__val__))
+visit(t::Delay, f::Function) = Delay(f(t.__delay__))
+visit(t::BreakContinue, ::Function) = t
+visit(t::Proc{T,Ts}, ::Function) where {T,Ts} = t
+
+# Constructors
+
+for ty = TYPES
+        @eval cte(t::$ty) = CTE{$ty}(t)
+end
+
+for ty = TYPES
+        @eval init(t::$ty) = Init{$ty}(t)
+end
+
+init(t::Code{T}) where {T<:Struct} = Init{T}(t)
+init(t::String) = Init{Ptr{UInt8}}(pointer(t))
+
+isunit(t::Bind) = t.__cell__.__id__ == 0x0
 
 mutable struct Ret
         type::Union{Type,Nothing}
@@ -135,16 +162,6 @@ function block(f::Function)
         return Blk{ret.type}(lbl, val)
 end
 
-struct Delay <: Code{Nothing}
-        __delay__::Code
-end
-visit(t::Delay, f::Function) = Delay(f(t.__delay__))
-
-struct BreakContinue <: Code{Bool}
-        __break__::Bool
-end
-visit(t::BreakContinue, ::Function) = t
-
 function loop(f::Function)
         lbl = L()
         blk = (; var"break"=Ctl(lbl, BreakContinue(true)),
@@ -161,14 +178,6 @@ var"if"(c::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
         block(blk -> var"if"(c, blk.return(iftrue), blk.return(iffalse)))
 var"if"(c::Code{Bool}, iftrue::Code{Nothing}, ::Nothing) = var"if"(c, iftrue)
 
-struct Proc{T,Ts<:Tuple} <: Code{Pair{Ts,T}}
-        __symbol__::Symbol
-        __cells__::Ts
-        __block__::Ref{Blk{T}}
-        Proc(s, cells::Ts, r::Blk{T}) where {T,Ts} =
-                new{T,Ts}(s, cells, Ref{Blk{T}}(r))
-end
-visit(t::Proc{T,Ts}, ::Function) where {T,Ts} = t
 
 function proc(s::Symbol, f::Function)
         local sig = tuple(only(methods(f)).sig.types...)
@@ -284,7 +293,7 @@ function (c::Struct{Tag,Fields,Types})(args...) where {Tag,Fields,Types}
         Node{Struct{Tag,Fields,Types}}(INIT, inits)
 end
 
-# N.B. setproperty! and setindex! not used
+# N.B. No overloading of setproperty! and setindex! (see Meta.@lower setindex!)
 
 Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
         Node{T}(INDEX, [c, s])

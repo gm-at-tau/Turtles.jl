@@ -33,12 +33,13 @@ end
 (phi::Phi)(c::IR.Code) = IR.visit(c, phi)
 (phi::Phi)(c::IR.Blk{Nothing}) = begin
         phi.labels[c.__lbl__] = R{Nothing}()
-        IR.Blk{Nothing}(c.__lbl__, phi(c.__blk__))
+        IR.visit(c, phi)
 end
 (phi::Phi)(c::IR.Blk{T}) where {T} =
         Notation.bind(IR.local(zero(T)), function (m)
                 phi.labels[c.__lbl__] = m
-                blk = IR.Blk{Nothing}(c.__lbl__, phi(c.__blk__))
+		# N.B. Change of type
+		blk = IR.Blk{Nothing}(c.__lbl__, phi(c.__blk__))
                 Notation.bind(blk, () -> m)
         end)
 (phi::Phi)(c::IR.Ctl) =

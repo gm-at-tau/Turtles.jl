@@ -84,9 +84,7 @@ function code(io::IO, c::IR.Node{T}) where {T}
 end
 
 function code(io::IO, c::IR.Ctl)
-        print(io, "return:")
-        code(io, c.__lbl__)
-        print(io, " ")
+        print(io, "return:$(c.__lbl__) ")
         code(io, c.__val__)
         print(io, "; ")
 end
@@ -163,15 +161,15 @@ function code(io::IO, c::IR.Proc)
         code(io, c.__block__[])
 end
 
-code(io::IO, c::M) = print(io, "m$(c.__id__)")
-code(io::IO, c::R) = print(io, "r$(c.__id__)")
-code(io::IO, c::L) = print(io, "L$(c.__id__)")
 
 for ty = IR.TYPES
         ty in (Ptr{UInt8}, Nothing) && continue
         @eval code(io::IO, c::CTE{$ty}) = print(io, c.__val__)
         @eval code(io::IO, c::IR.Init{$ty}) = print(io, c.__val__)
 end
+
+code(io::IO, c::IR.M) = print(io, "m$(c.__id__)")
+code(io::IO, c::IR.R) = print(io, "r$(c.__id__)")
 
 code(::IO, ::CTE{Nothing}) = nothing
 code(io::IO, ::IR.Init{Nothing}) = print(io, "{}")
@@ -180,6 +178,7 @@ code(io::IO, c::CTE{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
 code(io::IO, c::IR.Init{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
 
 Base.show(io::IO, c::IR.Code) = code(io, c)
+Base.show(io::IO, c::IR.L) = print(io, "L$(c.__id__)")
 
 end # module PrettyPrint
 

@@ -28,7 +28,7 @@ struct OpenLabel <: Function
 end
 
 (ls::OpenLabel)(c::IR.Code) = IR.visit(c, ls)
-(ls::OpenLabel)(lbl::IR.L) = (push!(ls.labels, lbl); lbl)
+(ls::OpenLabel)(c::IR.Blk) = (push!(ls.labels, c.__blk__); IR.visit(c, ls))
 function (ls::OpenLabel)(c::IR.Ctl)
         c.__lbl__ in ls.labels && return IR.visit(c, ls)
         ls.func(IR.visit(c, ls))
