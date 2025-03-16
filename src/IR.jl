@@ -175,6 +175,7 @@ var"if"(c::Code{Bool}, iftrue::Code{Nothing}) =
 
 var"if"(c::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
         block(blk -> var"if"(c, blk.return(iftrue), blk.return(iffalse)))
+var"if"(c::Code{Bool}, iftrue::Code{Nothing}, ::CTE{Nothing}) = var"if"(c, iftrue)
 var"if"(c::Code{Bool}, iftrue::Code{Nothing}, ::Nothing) = var"if"(c, iftrue)
 
 
@@ -268,9 +269,9 @@ end
 Base.ifelse(bool::Code, iftrue, iffalse) = var"if"(bool, iftrue, iffalse)
 Base.ifelse(bool::CTE, iftrue, iffalse) = ifelse(bool.__val__, iftrue, iffalse)
 Notation.if(bool::Code, iftrue::Function) =
-        var"if"(bool, iftrue())
+        var"if"(bool, convert(Code, iftrue()))
 Notation.if(bool::Code, iftrue::Function, iffalse::Function) =
-        var"if"(bool, iftrue(), iffalse())
+        var"if"(bool, convert(Code, iftrue()), convert(Code, iffalse()))
 Notation.if(bool::CTE, iftrue::Function) =
         Notation.if(bool.__val__, iftrue)
 Notation.if(bool::CTE, iftrue::Function, iffalse::Function) =
