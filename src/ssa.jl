@@ -13,17 +13,10 @@ using ..PrettyPrint
 
 ssa(c::IR.Code) = IR.visit(c, ssa)
 
-function register(c::IR.Code)
-        local s = ssa(c)
-        (IR.type(s) == Nothing || s isa IR.V) && return s
-        Notation.bind(s, (r) -> r)
-end
-reg(c::IR.Code) = IR.visit(c, ssa)
-reg(c::IR.Bind) = register(c)
-reg(c::IR.Node) = register(c)
-
-ssa(c::IR.Node) = IR.visit(c, reg)
-ssa(c::IR.Ret) = IR.visit(c, reg)
+ssa(c::IR.Node) = IR.let((args...) ->
+        typeof(c)(c.__keyword__, collect(args)))(ssa.(c.__args__)...)
+ssa(c::IR.Ret) = IR.let((ret) ->
+        typeof(c)(c.__lbl__, ret))(ssa(c.__val__))
 
 struct Phi <: Function
         labels::Dict{L,V}
@@ -38,15 +31,15 @@ end
 (phi::Phi)(c::IR.Blk{T}) where {T} =
         Notation.bind(IR.local(zero(T)), function (m)
                 phi.labels[c.__lbl__] = m
-		# N.B. Change of type
-		blk = IR.Blk{Nothing}(c.__lbl__, phi(c.__blk__))
+                # N.B. Change of type
+                blk = IR.Blk{Nothing}(c.__lbl__, phi(c.__blk__))
                 Notation.bind(blk, () -> m)
         end)
 (phi::Phi)(c::IR.Ret) =
         let m = phi.labels[c.__lbl__]
                 m isa M || return c
                 ret = Notation.:←(m, phi(c.__val__))
-                Notation.bind(ret, () -> IR.Ret(c.__lbl__, nothing))
+                Notation.bind(ret, () -> IR.Ret{Nothing}(c.__lbl__, nothing))
         end
 
 flat(c::IR.Code) = IR.visit(c, flat)
@@ -55,12 +48,7 @@ flat(c::IR.Blk) = IR.visit(c, flat)
 hoist(c::IR.Code, f::Function) = f(c)
 hoist(c::IR.Bind, f::Function) =
         flat(IR.Bind(c.__val__, c.__cell__, hoist(c.__cont__, f)))
-hoist(c::Vector{<:IR.Code}, f::Function) =
-        isempty(c) ? f(c) :
-        hoist(c[1], (v) -> hoist(c[2:end], (t::Vector) -> f([v; t])))
 
-flat(c::IR.Node{T}) where {T} =
-        hoist(flat.(c.__args__), (args) -> IR.Node{T}(c.__keyword__, args))
 flat(c::IR.Bind) =
         hoist(flat(c.__val__), (v) -> IR.Bind(v, c.__cell__, flat(c.__cont__)))
 flat(c::IR.Ret) =

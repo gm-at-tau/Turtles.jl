@@ -45,7 +45,8 @@ struct L
         L() = new(newlabel())
 end
 
-abstract type V{T} <: Code{T} end
+abstract type Atom{T} <: Code{T} end
+abstract type V{T} <: Atom{T} end
 
 global newregister = newid()
 struct R{T} <: V{T}
@@ -60,11 +61,11 @@ struct M{T} <: V{T}
         M{T}() where {T} = new{T}(newmutable())
 end
 
-struct CTE{T} <: Code{T}
+struct CTE{T} <: Atom{T}
         __val__::T
 end
 
-struct Init{T} <: Code{T}
+struct Init{T} <: Atom{T}
         __val__::T
 end
 
@@ -86,20 +87,20 @@ struct Blk{T} <: Code{T}
         __blk__::Code{Nothing}
 end
 
-struct Ret <: Code{Nothing}
+struct Ret{T} <: Code{Nothing}
         __lbl__::L
-        __val__::Code
+        __val__::Code{T}
 end
 
-struct Thunk <: Code{Nothing}
-        __blk__::Code
+struct Thunk <: Atom{Nothing}
+        __blk__::Code{Nothing}
 end
 
-struct BreakContinue <: Code{Nothing}
+struct BreakContinue <: Atom{Nothing}
         __break__::Bool
 end
 
-struct Proc{T,Ts<:Tuple} <: Code{Function}
+struct Proc{T,Ts<:Tuple} <: Atom{Function}
         __symbol__::Symbol
         __cells__::Ts
         __block__::Ref{Blk{T}}
@@ -109,21 +110,16 @@ end
 
 function visit end
 
-visit(t::CTE, ::Function) = t
-visit(t::Init, ::Function) = t
+visit(t::C, ::Function) where {C<:Atom} = t
 visit(t::Node{T}, f::Function) where {T} =
         Node{T}(t.__keyword__, f.(t.__args__))
-visit(t::R, ::Function) = t
-visit(t::M, ::Function) = t
 visit(t::Bind{T}, f::Function) where {T} =
         Bind(f(t.__val__), f(t.__cell__), f(t.__cont__))
 visit(t::Blk{T}, f::Function) where {T} =
         Blk{T}(t.__lbl__, f(t.__blk__))
-visit(t::Ret, f::Function) =
-        Ret(t.__lbl__, f(t.__val__))
+visit(t::Ret{T}, f::Function) where {T} =
+        Ret{T}(t.__lbl__, f(t.__val__))
 visit(t::Thunk, f::Function) = Thunk(f(t.__blk__))
-visit(t::BreakContinue, ::Function) = t
-visit(t::Proc{T,Ts}, ::Function) where {T,Ts} = t
 
 # Constructors
 
@@ -189,20 +185,20 @@ end
 
 # Extensions
 
-struct Fn{F}
+struct Let{F}
         f::F
 end
 
-fn(f::F) where {F} = Fn(f)
+var"let"(fn::F) where {F} = Let(fn)
 
-(fn::Fn{F})(args::Vararg) where {F} = fn.f(args...)
-function (fn::Fn{F})(args::Vararg{Code}) where {F}
-        local v = Any[]
+(fn::Let{F})(args::Vararg) where {F} = fn.f(args...)
+function (fn::Let{F})(args::Vararg{Code}) where {F}
+        local v = Code[]
         sizehint!(v, length(args))
         function genlet()
                 fn.f(v...)
         end
-        function genlet(a::R, args::Vararg{Code})
+        function genlet(a::Atom, args::Vararg{Code})
                 push!(v, a)
                 genlet(args...)
         end

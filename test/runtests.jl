@@ -55,7 +55,7 @@ end
 
 @testset "max3" begin
         @proc function max3(a::IR.R{Int}, b::IR.R{Int}, c::IR.R{Int})
-                reduce(IR.fn(max), [a, b, c])
+                reduce(IR.let(max), [a, b, c])
         end
 
         @proc function maxsum(x::IR.R{Int}, y::IR.R{Int})
