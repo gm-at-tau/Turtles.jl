@@ -40,11 +40,11 @@ typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
 names(::Type{IR.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types} = Fields::Tuple
 names(::Type{T}) where {T} = [nothing]
 
-function code(io::IO, c::IR.Node{T}) where {T}
-        if c.__keyword__ == IR.CALL
-                print(io, c.__args__[1].__symbol__)
+function code(io::IO, c::IR.Fn{T}) where {T}
+        if c.__keyword__ isa IR.Proc
+                print(io, c.__keyword__.__symbol__)
                 print(io, "(")
-                join(io, c.__args__[2:end], ", ")
+                join(io, c.__args__, ", ")
                 print(io, ")")
         elseif c.__keyword__ == IR.INIT
                 print(io, "($(typename(T))){ ")
@@ -86,10 +86,10 @@ end
 function code(io::IO, c::IR.Ret)
         print(io, "return:$(c.__lbl__) (")
         code(io, c.__val__)
-	print(io, "); ")
+        print(io, "); ")
 end
 
-function code(io::IO, c::IR.Node{Nothing})
+function code(io::IO, c::IR.Fn{Nothing})
         if c.__keyword__ == :←
                 print(io, c.__args__[1])
                 print(io, " = ")

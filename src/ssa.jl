@@ -13,7 +13,7 @@ using ..PrettyPrint
 
 ssa(c::IR.Code) = IR.visit(c, ssa)
 
-ssa(c::IR.Node) = IR.let((args...) ->
+ssa(c::IR.Fn) = IR.let((args...) ->
         typeof(c)(c.__keyword__, collect(args)))(ssa.(c.__args__)...)
 ssa(c::IR.Ret) = IR.let((ret) ->
         typeof(c)(c.__lbl__, ret))(ssa(c.__val__))
@@ -63,6 +63,8 @@ struct Forward <: Function
 end
 
 (fwd::Forward)(c::IR.Code) = IR.visit(c, fwd)
+(fwd::Forward)(::Symbol) = nothing
+(fwd::Forward)(c::IR.Fn) = (fwd(c.__keyword__); IR.visit(c, fwd))
 function (fwd::Forward)(c::IR.Proc{T,Ts}) where {T,Ts}
         local proc = get!(fwd.procs, c.__symbol__) do
                 local phi = Phi()
@@ -135,7 +137,7 @@ function code(io::IO, c::IR.Ret)
         print(io, "goto $(c.__lbl__); ")
 end
 
-function code(io::IO, c::IR.Node{Nothing})
+function code(io::IO, c::IR.Fn{Nothing})
         if c.__keyword__ == :←
                 print(io, c.__args__[1])
                 print(io, " = ")
