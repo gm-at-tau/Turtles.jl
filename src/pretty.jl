@@ -118,8 +118,7 @@ function code(io::IO, c::IR.Node{Nothing})
                 newline(io)
                 print(io, "}")
                 if length(c.__args__) == 3
-                        newline(io)
-                        print(io, "else {")
+                        print(io, " else {")
                         indent() do
                                 newline(io)
                                 code(io, c.__args__[3])

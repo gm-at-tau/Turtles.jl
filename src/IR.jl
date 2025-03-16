@@ -224,17 +224,14 @@ var"local"(t::T) where {T} = Local{T}(cte(t))
 
 var"while"(v::Function, c::Code{Bool}) = var"while"(c, v)
 var"while"(c::Code{Bool}, v::Function) =
-        loop() do blk
-                goto = Notation.if(!c, () -> blk.break)
-                Notation.bind(goto, () -> Notation.apply(v, blk))
-        end
+        loop(blk -> Notation.if(c, () -> Notation.apply(v, blk), () -> blk.break))
 
 var"for"(f::Function, c::Code) =
-        Notation.bind(var"local"(0), index ->
-                var"while"(index < c) do blk
-                        Notation.bind(index, i -> # N.B. Immutable
-                                Notation.bind(Notation.:←(index, i + 1), () ->
-                                        Notation.apply(f, i, blk)))
+        Notation.bind(var"local"(0), i ->
+                var"while"(i < c) do blk
+                        Notation.bind(i, r -> # N.B. Immutable
+                                Notation.bind(Notation.:←(i, r + 1), () ->
+                                        Notation.apply(f, r, blk)))
                 end)
 
 # Conversions
@@ -258,7 +255,8 @@ function Notation.bind(c::Code{T}, f::Function) where {T}
         Bind(c, cell, val)
 end
 
-Notation.bind(c::CTE{T}, f::Function) where {T} = f(c.__val__)
+Notation.bind(c::R, f::Function) = f(c)
+Notation.bind(c::CTE, f::Function) = f(c.__val__)
 
 function Notation.bind(c::Local{T}, f::Function) where {T}
         local cell = M{T}()
