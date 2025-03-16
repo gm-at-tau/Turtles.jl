@@ -17,6 +17,8 @@ ssa(c::IR.Fn) = IR.let((args...) ->
         typeof(c)(c.__keyword__, collect(args)))(ssa.(c.__args__)...)
 ssa(c::IR.Ret) = IR.let((ret) ->
         typeof(c)(c.__lbl__, ret))(ssa(c.__val__))
+ssa(c::IR.If) = IR.let((bool) ->
+        typeof(c)(bool, ssa(c.__iftrue__), ssa(c.__iffalse__)))(ssa(c.__bool__))
 
 struct Phi <: Function
         labels::Dict{L,V}
@@ -24,10 +26,15 @@ struct Phi <: Function
 end
 
 (phi::Phi)(c::IR.Code) = IR.visit(c, phi)
-(phi::Phi)(c::IR.Blk{Nothing}) = begin
-        phi.labels[c.__lbl__] = R{Nothing}()
-        IR.visit(c, phi)
-end
+(phi::Phi)(c::IR.If{Nothing}) = IR.visit(c, phi)
+(phi::Phi)(c::IR.If{T}) where {T} = # N.B. Change of type
+        phi(IR.block(blk -> IR.If{Nothing}(c.__bool__,
+                blk.return(c.__iftrue__), blk.return(c.__iffalse__))))
+
+(phi::Phi)(c::IR.Blk{Nothing}) =
+        (phi.labels[c.__lbl__] = R{Nothing}(); IR.visit(c, phi))
+(phi::Phi)(c::IR.Blk{IR.BreakContinue}) =
+        (phi.labels[c.__lbl__] = R{IR.BreakContinue}(); IR.visit(c, phi))
 (phi::Phi)(c::IR.Blk{T}) where {T} =
         Notation.bind(IR.local(zero(T)), function (m)
                 phi.labels[c.__lbl__] = m
@@ -44,6 +51,7 @@ end
 
 flat(c::IR.Code) = IR.visit(c, flat)
 flat(c::IR.Blk) = IR.visit(c, flat)
+flat(c::IR.If{Nothing}) = IR.visit(c, flat)
 
 hoist(c::IR.Code, f::Function) = f(c)
 hoist(c::IR.Bind, f::Function) =
@@ -54,7 +62,7 @@ flat(c::IR.Bind) =
 flat(c::IR.Ret) =
         hoist(flat(c.__val__), (v) -> IR.Ret(c.__lbl__, v))
 
-translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(flat(ssa(c))))
+translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(ssa(c)))
 
 struct Forward <: Function
         procs::Dict{Symbol,IR.Proc}
@@ -102,7 +110,6 @@ function procedure(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
 end
 
 code(io::IO, c::IR.Code) = print(io, c)
-code(io::IO, c::IR.Thunk) = code(io, c.__blk__)
 
 function code(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
         procedure(io, c)
@@ -137,6 +144,21 @@ function code(io::IO, c::IR.Ret)
         print(io, "goto $(c.__lbl__); ")
 end
 
+function code(io::IO, c::IR.If)
+        print(io, "if (")
+        code(io, c.__bool__)
+        print(io, ") { ")
+        code(io, c.__iftrue__)
+        print(io, " } else { ")
+        code(io, c.__iffalse__)
+        print(io, " } ")
+end
+
+function code(io::IO, c::IR.Loop)
+        print(io, "for (;;) ")
+        code(io, c.__blk__)
+end
+
 function code(io::IO, c::IR.Fn{Nothing})
         if c.__keyword__ == :←
                 print(io, c.__args__[1])
@@ -155,20 +177,6 @@ function code(io::IO, c::IR.Fn{Nothing})
                 print(io, "] = ")
                 code(io, c.__args__[3])
                 print(io, "; ")
-        elseif c.__keyword__ == Symbol("if")
-                print(io, "if (")
-                code(io, c.__args__[1])
-                print(io, ") { ")
-                code(io, c.__args__[2])
-                print(io, " } ")
-                if length(c.__args__) == 3
-                        print(io, "else { ")
-                        code(io, c.__args__[3])
-                        print(io, " } ")
-                end
-        elseif c.__keyword__ == Symbol("loop")
-                print(io, "for (;;) ")
-                code(io, c.__args__[1])
         else
                 throw(ArgumentError("Cannot show $(c.__keyword__)"))
         end

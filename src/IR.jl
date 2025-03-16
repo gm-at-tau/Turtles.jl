@@ -12,7 +12,6 @@ export V, R, M, L, CTE
 using ..Turtles
 using ..Notation
 
-
 abstract type Code{T} end
 
 # Types
@@ -87,20 +86,26 @@ struct Ret{T} <: Code{Nothing}
         __val__::Code{T}
 end
 
-struct Thunk <: Atom{Nothing}
-        __blk__::Code{Nothing}
-end
-
-struct BreakContinue <: Atom{Nothing}
-        __break__::Bool
-end
-
 struct Proc{T,Ts<:Tuple} <: Atom{Function}
         __symbol__::Symbol
         __cells__::Ts
         __block__::Ref{Blk{T}}
         Proc(s, cells::Ts, r::Blk{T}) where {T,Ts} =
                 new{T,Ts}(s, cells, Ref{Blk{T}}(r))
+end
+
+struct If{T} <: Code{T}
+        __bool__::Code{Bool}
+        __iftrue__::Code{T}
+        __iffalse__::Code{T}
+end
+
+struct BreakContinue <: Atom{Nothing}
+        __break__::Bool
+end
+
+struct Loop <: Code{Nothing}
+        __blk__::Blk{BreakContinue}
 end
 
 struct Fn{T} <: Code{T}
@@ -111,15 +116,19 @@ end
 function visit end
 
 visit(t::C, ::Function) where {C<:Atom} = t
+
+visit(t::If{T}, f::Function) where {T} =
+        If{T}(f(t.__bool__), f(t.__iftrue__), f(t.__iffalse__))
+visit(t::Loop, f::Function) = Loop(f(t.__blk__))
 visit(t::Fn{T}, f::Function) where {T} =
         Fn{T}(t.__keyword__, f.(t.__args__))
+
 visit(t::Bind{T}, f::Function) where {T} =
         Bind(f(t.__val__), f(t.__cell__), f(t.__cont__))
 visit(t::Blk{T}, f::Function) where {T} =
         Blk{T}(t.__lbl__, f(t.__blk__))
 visit(t::Ret{T}, f::Function) where {T} =
         Ret{T}(t.__lbl__, f(t.__val__))
-visit(t::Thunk, f::Function) = Thunk(f(t.__blk__))
 
 # Constructors
 
@@ -158,22 +167,19 @@ function block(f::Function)
 end
 
 function loop(f::Function)
-        lbl = L()
-        blk = (; var"break"=Ret(lbl, BreakContinue(true)),
+        local lbl = L()
+        local blk = (; var"break"=Ret(lbl, BreakContinue(true)),
                 var"continue"=Ret(lbl, BreakContinue(false)))
-        Fn{Nothing}(:loop, [Thunk(Blk{Nothing}(lbl, Notation.apply(f, blk)))])
+        local val = Notation.apply(f, blk)
+        if type(val) != Nothing
+                val = blk.continue(val)
+        end
+        Loop(Blk{BreakContinue}(lbl, val))
 end
 
-var"if"(c::Code{Bool}, iftrue::Code{Nothing}, iffalse::Code{Nothing}) =
-        Fn{Nothing}(:if, [c, Thunk(iftrue), Thunk(iffalse)])
-var"if"(c::Code{Bool}, iftrue::Code{Nothing}) =
-        Fn{Nothing}(:if, [c, Thunk(iftrue)])
-
 var"if"(c::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
-        block(blk -> var"if"(c, blk.return(iftrue), blk.return(iffalse)))
-var"if"(c::Code{Bool}, iftrue::Code{Nothing}, ::CTE{Nothing}) = var"if"(c, iftrue)
-var"if"(c::Code{Bool}, iftrue::Code{Nothing}, ::Nothing) = var"if"(c, iftrue)
-
+        If{T}(c, iftrue, iffalse)
+var"if"(c::Code{Bool}, iftrue::Code) = var"if"(c, iftrue, CTE{Nothing}(nothing))
 
 function proc(s::Symbol, f::Function)
         local sig = tuple(only(methods(f)).sig.types...)

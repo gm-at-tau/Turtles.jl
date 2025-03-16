@@ -18,7 +18,6 @@ function indent(f::Function)
         global INDENT -= 1
 end
 
-code(io::IO, c::IR.Thunk) = code(io, c.__blk__)
 code(io::IO, c::IR.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
 
 function code(io::IO, c::IR.Blk)
@@ -89,6 +88,32 @@ function code(io::IO, c::IR.Ret)
         print(io, "); ")
 end
 
+function code(io::IO, c::IR.If)
+        print(io, "if (")
+        code(io, c.__bool__)
+        print(io, ") {")
+        indent() do
+                newline(io)
+                code(io, c.__iftrue__)
+        end
+        newline(io)
+        print(io, "}")
+        if !(c.__iffalse__ isa CTE{Nothing})
+                print(io, " else { ")
+                indent() do
+                        newline(io)
+                        code(io, c.__iffalse__)
+                end
+                newline(io)
+                print(io, "}")
+        end
+end
+
+function code(io::IO, c::IR.Loop)
+        print(io, "loop ")
+        code(io, c.__blk__)
+end
+
 function code(io::IO, c::IR.Fn{Nothing})
         if c.__keyword__ == :←
                 print(io, c.__args__[1])
@@ -107,28 +132,6 @@ function code(io::IO, c::IR.Fn{Nothing})
                 print(io, "] = ")
                 code(io, c.__args__[3])
                 print(io, "; ")
-        elseif c.__keyword__ == Symbol("if")
-                print(io, "if (")
-                code(io, c.__args__[1])
-                print(io, ") {")
-                indent() do
-                        newline(io)
-                        code(io, c.__args__[2])
-                end
-                newline(io)
-                print(io, "}")
-                if length(c.__args__) == 3
-                        print(io, " else {")
-                        indent() do
-                                newline(io)
-                                code(io, c.__args__[3])
-                        end
-                        newline(io)
-                        print(io, "}")
-                end
-        elseif c.__keyword__ == Symbol("loop")
-                print(io, "loop ")
-                print(io, c.__args__[1])
         else
                 throw(ArgumentError("Cannot show $(c.__keyword__)"))
         end
