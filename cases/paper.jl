@@ -35,6 +35,7 @@ end
 
 gib = IR.proc(:gib, gibonacci)
 f_gib = IR.proc(:f_gib, (n::IR.R{Int}) -> gibonacci(promote(0, 1, n)...))
+gib5 = IR.proc(:gib5, (x::IR.R{Int}, y::IR.R{Int}) -> gibonacci(promote(x, y, 5)...))
 
 # N.B. Recursive require return type annotation
 @proc IR.Code{Int} function recursive_gibonacci(x::IR.Code{Int}, y::IR.Code{Int}, n::IR.Code{Int})

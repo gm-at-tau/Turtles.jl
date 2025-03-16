@@ -84,9 +84,9 @@ function code(io::IO, c::IR.Node{T}) where {T}
 end
 
 function code(io::IO, c::IR.Ret)
-        print(io, "return:$(c.__lbl__) ")
+        print(io, "return:$(c.__lbl__) (")
         code(io, c.__val__)
-        print(io, "; ")
+	print(io, "); ")
 end
 
 function code(io::IO, c::IR.Node{Nothing})
