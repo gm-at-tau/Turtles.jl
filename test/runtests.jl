@@ -53,6 +53,45 @@ end
         gcc("test_generic", compile(alldigit))
 end
 
+@testset "unrolling" begin
+        @code function pow(x::IR.Code{Int}, n::IR.Code{Int})
+                p := IR.local(1)
+                IR.for(n) do
+                        p = p * x
+                end
+                p
+        end
+
+        @info IR.proc(:pow, pow)
+        @info IR.proc(:pow, (x::IR.R{Int}) -> pow(promote(x, 5)...))
+end
+
+@testset "gibonacci" begin
+        @code function gibonacci(x::IR.Code{Int}, y::IR.Code{Int}, n::IR.Code{Int})
+                x := IR.local(x)
+                y := IR.local(y)
+                IR.for(n) do
+                        z := x + y
+                        x = y
+                        y = z
+                end
+                x
+        end
+
+        @info IR.proc(:fibonacci, (n::IR.R{Int}) -> gibonacci(promote(0, 1, n)...))
+	@proc IR.Code{Int} function gib5(x::IR.R{Int}, y::IR.R{Int})
+                gibonacci(promote(x, y, 5)...)
+        end
+        gcc("test_gibonacci", compile(gib5))
+
+	# N.B. Recursive function cannot have top-level [@code]
+        function recur_gibonacci(x::IR.Code{Int}, y::IR.Code{Int}, n::IR.Code{Int})
+		@code ((n == 0) ? x : IR.let(recur_gibonacci)(y, x + y, n - 1))
+        end
+        @info IR.proc(:recur_gib5, (x::IR.R{Int}, y::IR.R{Int}) ->
+                recur_gibonacci(promote(x, y, 5)...))
+end
+
 @testset "max3" begin
         @proc function max3(a::IR.R{Int}, b::IR.R{Int}, c::IR.R{Int})
                 reduce(IR.let(max), [a, b, c])
@@ -72,8 +111,8 @@ end
                         i = i + 1 # N.B. immutable return
                 end)
                 i = i + IR.block() do blk_i
-			i = i + 5
-			blk_i.return(2)
+                        i = i + 5
+                        blk_i.return(2)
                 end
                 if i == 4
                         blk.return(i + 1)

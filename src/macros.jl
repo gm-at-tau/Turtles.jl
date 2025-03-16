@@ -38,7 +38,7 @@ end
 function _code(q::Expr)
         if Meta.isexpr(q, :block)
                 Expr(:block, _rebind(q.args)...)
-	elseif Meta.isexpr(q, :(=))
+        elseif Meta.isexpr(q, :(=))
                 Expr(:call, :(Turtles.Notation.:←), _code.(q.args)...)
         elseif Meta.isexpr(q, :if) || Meta.isexpr(q, :elseif)
                 _if(_code.(q.args)...)
@@ -75,7 +75,7 @@ macro proc(ret, q)
         cell = IR.R{ty}()
         r = quote
                 $name = $(IR.proc)($(QuoteNode(name)), $(Expr(:function, sig, Expr(:block, cell))))
-                $name.__block__[] = ($(Expr(:function, sig, blk)))($name.__cells__...)
+                $name.__block__[] = $(IR.block)(($(Expr(:function, sig, blk)))($name.__cells__...))
         end
         return esc(r)
 end

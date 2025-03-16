@@ -143,6 +143,8 @@ end
 init(t::Code{T}) where {T<:Struct} = Init{T}(t)
 init(t::String) = Init{Ptr{UInt8}}(pointer(t))
 
+block(c::Blk) = c
+block(c::Code) = block(blk -> blk.return(c))
 function block(f::Function)
         local lbl = L()
         local rettype = Ref{Union{Type,Nothing}}(nothing)
@@ -186,7 +188,7 @@ function proc(s::Symbol, f::Function)
         local types = type.(sig[2:end])
         local cells = tuple([R{ty}() for ty = types]...)
         local val = f(cells...)
-        Proc(s, cells, block(blk -> blk.return(val)))
+        Proc(s, cells, block(val))
 end
 
 # Extensions
@@ -202,16 +204,17 @@ function (fn::Let{F})(args::Vararg{Code}) where {F}
         local v = Code[]
         sizehint!(v, length(args))
         function genlet()
+                @assert length(v) == length(args) "$(args => v)"
                 fn.f(v...)
         end
-        function genlet(a::Atom, args::Vararg{Code})
+        function genlet(a::Atom, tail::Vararg{Code})
                 push!(v, a)
-                genlet(args...)
+                genlet(tail...)
         end
-        function genlet(a::Code, args::Vararg{Code})
+        function genlet(a::Code, tail::Vararg{Code})
                 Notation.bind(a, function (b)
                         push!(v, b)
-                        genlet(args...)
+                        genlet(tail...)
                 end)
         end
         return genlet(args...)
