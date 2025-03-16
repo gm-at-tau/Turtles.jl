@@ -334,9 +334,9 @@ for e = ARITY_2
                 @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T} =
                         CTE{Bool}($e(lhs.__val__, rhs.__val__))
         else
-                @eval Base.$e(lhs::Code{T}, rhs::Code{T}) where {T<:Number} =
+                @eval Base.$e(lhs::Code{T}, rhs::Code{T}) where {T} =
                         Node{T}($(QuoteNode(e)), [lhs, rhs])
-                @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T<:Number} =
+                @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T} =
                         CTE{T}($e(lhs.__val__, rhs.__val__))
         end
 
@@ -346,9 +346,14 @@ end
 
 Base.:|(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, rhs, lhs)
 Base.:|(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, lhs, rhs)
+Base.:|(lhs::CTE{Bool}, rhs::CTE{Bool}) = CTE{Bool}(lhs.__val__ | rhs.__val__)
+
 Base.:&(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, lhs, rhs)
 Base.:&(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, rhs, lhs)
+Base.:&(lhs::CTE{Bool}, rhs::CTE{Bool}) = CTE{Bool}(lhs.__val__ & rhs.__val__)
+
 Base.:⊻(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, !lhs, lhs)
 Base.:⊻(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, !rhs, rhs)
+Base.:⊻(lhs::CTE{Bool}, rhs::CTE{Bool}) = CTE{Bool}(lhs.__val__ ⊻ rhs.__val__)
 
 end # module IR
