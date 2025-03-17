@@ -21,15 +21,15 @@ type(::C) where {T,C<:Code{T}} = T
 
 const TYPES = (Int32, Int64, UInt8, Bool, Nothing, Ptr{UInt8})
 
-struct Struct{Tag,Fields,Types<:Tuple} end
+struct Struct{Tag,NT<:NamedTuple} end
 
 function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
         local t = NamedTuple(fields)
-        return Struct{tag,keys(t),Tuple{values(t)...}}()
+        return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}()
 end
 
-Base.zero(s::Struct{Tag,Fields,Types}) where {Tag,Fields,Types} =
-        s(zip(Fields, zero.(Types))...)
+Base.zero(s::Struct{Tag,NT}) where {Tag,NT} =
+        s(zip(fieldnames(NT), zero.(fieldtypes(NT)))...)
 
 # Language (IR)
 
@@ -75,9 +75,8 @@ struct Bind{T} <: Code{T}
         __val__::Code
         __cell__::V
         __cont__::Code{T}
-        Bind(val::Code, cell::V, cont::Code{T}) where {T} = new{T}(val, cell, cont)
-        Bind(val::Code, ::V, ::Nothing) = val
-        Bind(val::Code, cell::V, c) = Bind(val, cell, cte(c))
+        Bind(val::Code{S}, cell::V{S}, cont::Code{T}) where {T,S} = new{T}(val, cell, cont)
+        Bind(val::Code{S}, cell::V{S}, c) where {S} = Bind(val, cell, cte(c))
 end
 
 struct Blk{T} <: Code{T}
@@ -250,12 +249,9 @@ end
 # Overload
 
 function Notation.bind(c::Code{T}, f::Function) where {T}
-        local cell = if Notation.arity(f) == 0
-                R{Nothing}()
-        else
-                R{T}()
-        end
+        local cell = (Notation.arity(f) == 0) ? R{Nothing}() : R{T}()
         local val = Notation.apply(f, cell)
+        isnothing(val) && return c
         Bind(c, cell, val)
 end
 
@@ -288,10 +284,10 @@ function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
         Fn{T}(c, [args...])
 end
 
-function (c::Struct{Tag,Fields,Types})(args...) where {Tag,Fields,Types}
+function (c::Struct{Tag,NT})(args...) where {Tag,NT}
         local inits = convert.(Code, collect(args))
-        @assert all(type.(inits) .== Types.types) "Type mismatch"
-        Fn{Struct{Tag,Fields,Types}}(INIT, inits)
+        @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
+        Fn{Struct{Tag,NT}}(INIT, inits)
 end
 
 # N.B. No overloading of setproperty! and setindex! (see Meta.@lower setindex!)
@@ -301,10 +297,10 @@ Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
 
 isfield(s::String) = startswith(s, "__")
 
-function Base.getproperty(c::Code{Struct{Tag,Fields,Types}}, s::Symbol) where {Tag,Fields,Types}
+function Base.getproperty(c::Code{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         isfield(string(s)) && return getfield(c, s)
-        local idx = only(findall(Fields .== s))
-        Fn{Types.types[idx]}(FIELD, [c, CTE{Symbol}(s)])
+        local idx = only(findall(fieldnames(NT) .== s))
+        Fn{fieldtypes(NT)[idx]}(FIELD, [c, CTE{Symbol}(s)])
 end
 
 Notation.:←(c::M{T}, v::Code{T}) where {T} = Fn{Nothing}(:←, [c, v])

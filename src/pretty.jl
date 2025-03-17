@@ -30,13 +30,13 @@ function code(io::IO, c::IR.Blk)
         print(io, "}")
 end
 
-typename(::Type{IR.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types} = string("struct ", Tag)
+typename(::Type{IR.Struct{Tag,NT}}) where {Tag,NT} = string("struct ", Tag)
 typename(::Type{Bool}) = "bool"
 typename(::Type{Nothing}) = "void"
 typename(::Type{T}) where {T<:Integer} = lowercase(string(T, "_t"))
 typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
 
-names(::Type{IR.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types} = Fields::Tuple
+names(::Type{IR.Struct{Tag,NT}}) where {Tag,NT} = fieldnames(NT)
 names(::Type{T}) where {T} = [nothing]
 
 function code(io::IO, c::IR.Fn{T}) where {T}

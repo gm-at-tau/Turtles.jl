@@ -87,7 +87,7 @@ function (fwd::Forward)(c::IR.Proc{T,Ts}) where {T,Ts}
         end
         fwd(proc.__proc__[])
 end
-function (fwd::Forward)(c::IR.Code{IR.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types}
+function (fwd::Forward)(c::IR.Code{IR.Struct{Tag,NT}}) where {Tag,NT}
         fwd.structs[Tag] = IR.type(c)()
         IR.visit(c, fwd)
 end
@@ -100,7 +100,8 @@ compile(c::IR.Proc) =
 
 ## Show
 
-declare(c::IR.V{T}) where {T} = "$(PrettyPrint.typename(T)) $c"
+declare(c::IR.R{T}) where {T} = "$(PrettyPrint.typename(T)) const $c"
+declare(c::IR.M{T}) where {T} = "$(PrettyPrint.typename(T)) $c"
 declare(::Type{T}, c::Symbol) where {T} = "$(PrettyPrint.typename(T)) $c"
 
 function procedure(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
@@ -111,9 +112,9 @@ end
 
 code(io::IO, c::IR.Code) = print(io, c)
 
-function codegen(io::IO, b::IR.Struct{Tag,Fields,Types}) where {Tag,Fields,Types}
+function codegen(io::IO, b::IR.Struct{Tag,NT}) where {Tag,NT}
         print(io, "struct $(Tag) { ")
-        for (f, t) = zip(Fields, Types.types)
+        for (f, t) = zip(fieldnames(NT), fieldtypes(NT))
                 print(io, declare(t, f))
                 print(io, "; ")
         end
