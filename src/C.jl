@@ -5,7 +5,7 @@
 # Copyright (C) 2025 Gabriel Domingues <gm@mail.tau.ac.il>
 #
 
-module SSA
+module C
 
 using ..IR
 using ..Notation

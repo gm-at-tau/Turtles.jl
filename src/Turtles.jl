@@ -38,22 +38,22 @@ include("C.jl")
 function compile(c::IR.Proc)
         io = IOBuffer()
         print(io, "#include <stdbool.h>\n#include <stdint.h>\n")
-        fwd::SSA.Forward = SSA.compile(c)
+        fwd::C.Forward = C.compile(c)
         for (k, v) = fwd.structs
-                SSA.codegen(io, v)
+                C.codegen(io, v)
                 print(io, '\n')
         end
         for (k, v) = fwd.procs
-                SSA.procedure(io, v)
+                C.procedure(io, v)
                 print(io, ";\n")
         end
         for (k, v) = fwd.procs
-                SSA.codegen(io, v)
+                C.codegen(io, v)
                 print(io, '\n')
         end
         String(take!(io))
 end
 
-export @code, @proc, IR, SSA, compile
+export @code, @proc, IR, C, compile
 
 end # module Turtles

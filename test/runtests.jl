@@ -24,7 +24,7 @@ end
                 end
                 a
         end
-        @info SSA.translate(c)
+        @info C.translate(c)
 end
 
 @testset "generic" begin
@@ -100,7 +100,7 @@ end
         @proc function maxsum(x::IR.R{Int}, y::IR.R{Int})
                 max3(x, y, x + y)
         end
-        # @info SSA.compile(max3)
+        # @info C.compile(max3)
         gcc("test_max3", compile(maxsum))
 end
 
@@ -122,7 +122,7 @@ end
                 end
                 i
         end
-        @info SSA.translate(c)
+        @info C.translate(c)
 end
 
 include("../cases/peg.jl")
@@ -136,7 +136,7 @@ include("../cases/peg.jl")
                 ok := PEG.reader(integer, env)
                 env.idx
         end
-        # @info SSA.compile(digits)
+        # @info C.compile(digits)
         gcc("test_peg", compile(digits))
 end
 
@@ -156,6 +156,6 @@ include("../cases/loop.jl")
                 end
                 a
         end
-        # @info SSA.compile(even_squares)
+        # @info C.compile(even_squares)
         gcc("test_loop", compile(even_squares))
 end
