@@ -33,7 +33,7 @@ include("IR.jl")
 include("macros.jl")
 include("control.jl")
 include("pretty.jl")
-include("ssa.jl")
+include("C.jl")
 
 function compile(c::IR.Proc)
         io = IOBuffer()
