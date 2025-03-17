@@ -27,9 +27,12 @@ end
 
 (phi::Phi)(c::IR.Code) = IR.visit(c, phi)
 (phi::Phi)(c::IR.If{Nothing}) = IR.visit(c, phi)
-(phi::Phi)(c::IR.If{T}) where {T} = # N.B. Change of type
-        phi(IR.block(blk -> IR.If{Nothing}(c.__bool__,
-                blk.return(c.__iftrue__), blk.return(c.__iffalse__))))
+(phi::Phi)(c::IR.If{T}) where {T} =
+        phi(IR.block(function (blk)
+                # N.B. Change of type
+                iftrue = IR.If{Nothing}(c.__bool__, blk.return(c.__iftrue__), IR.cte(nothing))
+                Notation.bind(iftrue, () -> c.__iffalse__)
+        end))
 
 (phi::Phi)(c::IR.Blk{Nothing}) =
         (phi.labels[c.__lbl__] = R{Nothing}(); IR.visit(c, phi))
@@ -38,9 +41,9 @@ end
 (phi::Phi)(c::IR.Blk{T}) where {T} =
         Notation.bind(IR.local(zero(T)), function (m)
                 phi.labels[c.__lbl__] = m
+                ret = Notation.:←(m, phi(c.__blk__))
                 # N.B. Change of type
-                blk = IR.Blk{Nothing}(c.__lbl__, phi(c.__blk__))
-                Notation.bind(blk, () -> m)
+                Notation.bind(IR.Blk{Nothing}(c.__lbl__, ret), () -> m)
         end)
 (phi::Phi)(c::IR.Ret) =
         let m = phi.labels[c.__lbl__]
@@ -62,7 +65,7 @@ flat(c::IR.Bind) =
 flat(c::IR.Ret) =
         hoist(flat(c.__val__), (v) -> IR.Ret(c.__lbl__, v))
 
-translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(ssa(c)))
+translate(c::IR.Code, phi::Phi=Phi()) = flat(ssa(phi(c)))
 
 struct Forward <: Function
         procs::Dict{Symbol,IR.Proc}
@@ -76,10 +79,7 @@ end
 function (fwd::Forward)(c::IR.Proc{T,Ts}) where {T,Ts}
         local proc = get!(fwd.procs, c.__symbol__) do
                 local phi = Phi()
-                local blk = c.__block__[]
-                phi.labels[blk.__lbl__] = R{T}()
-                local fnblk = translate(blk.__blk__, phi)
-                c.__block__[] = IR.Blk{T}(blk.__lbl__, fnblk)
+                c.__block__[] = translate(c.__block__[], phi)
                 return c
         end
         for c = proc.__cells__
@@ -111,13 +111,6 @@ end
 
 code(io::IO, c::IR.Code) = print(io, c)
 
-function code(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
-        procedure(io, c)
-        print(io, " { ")
-        code(io, c.__block__[])
-        print(io, " } ")
-end
-
 function codegen(io::IO, b::IR.Struct{Tag,Fields,Types}) where {Tag,Fields,Types}
         print(io, "struct $(Tag) { ")
         for (f, t) = zip(Fields, Types.types)
@@ -127,6 +120,42 @@ function codegen(io::IO, b::IR.Struct{Tag,Fields,Types}) where {Tag,Fields,Types
         print(io, " };")
 end
 
+function codegen(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
+        procedure(io, c)
+        print(io, " { ")
+        blk = c.__block__[]
+        if blk isa IR.Bind
+                code(io, blk)
+        else
+                print(io, "return ")
+                code(io, blk)
+                print(io, "; ")
+        end
+        print(io, " } ")
+end
+
+function code(io::IO, b::IR.Bind)
+        local c = b
+        while c isa IR.Bind
+                if IR.type(c.__val__) == Nothing
+                        code(io, c.__val__)
+                else
+                        print(io, declare(c.__cell__))
+                        print(io, " = ")
+                        code(io, c.__val__)
+                        print(io, "; ")
+                end
+                c = c.__cont__
+        end
+	if IR.type(c) in (Nothing, IR.BreakContinue)
+                code(io, c)
+        else
+                print(io, "return ")
+                code(io, c)
+                print(io, "; ")
+        end
+end
+
 function code(io::IO, c::IR.Blk)
         print(io, "{ ")
         code(io, c.__blk__)
@@ -134,14 +163,20 @@ function code(io::IO, c::IR.Blk)
 end
 
 function code(io::IO, c::IR.Ret)
-        if c.__val__ isa IR.V
+        if c.__val__ isa IR.R
+                @assert c.__lbl__.__id__ == 0x0 "`return` outside of function"
                 print(io, "return ")
                 code(io, c.__val__)
                 print(io, "; ")
         elseif c.__val__ isa IR.BreakContinue
-                @assert c.__val__.__break__ == true "`continue` is not implemented"
+                if c.__val__.__break__
+                        print(io, "goto $(c.__lbl__)_b; ")
+                else
+                        print(io, "goto $(c.__lbl__)_c; ")
+                end
+        else
+                print(io, "goto $(c.__lbl__); ")
         end
-        print(io, "goto $(c.__lbl__); ")
 end
 
 function code(io::IO, c::IR.If)
@@ -155,9 +190,15 @@ function code(io::IO, c::IR.If)
 end
 
 function code(io::IO, c::IR.Loop)
+        blk = c.__blk__
         print(io, "for (;;) ")
-        code(io, c.__blk__)
+        print(io, "{ { ")
+        code(io, blk.__blk__)
+        print(io, "} $(blk.__lbl__)_c:; ")
+        print(io, "} $(blk.__lbl__)_b:; ")
 end
+
+code(::IO, ::IR.BreakContinue) = nothing
 
 function code(io::IO, c::IR.Fn{Nothing})
         if c.__keyword__ == :←
@@ -180,22 +221,6 @@ function code(io::IO, c::IR.Fn{Nothing})
         else
                 throw(ArgumentError("Cannot show $(c.__keyword__)"))
         end
-end
-
-function code(io::IO, b::IR.Bind)
-        local c = b
-        while c isa IR.Bind
-                if IR.type(c.__val__) == Nothing
-                        code(io, c.__val__)
-                else
-                        print(io, declare(c.__cell__))
-                        print(io, " = ")
-                        code(io, c.__val__)
-                        print(io, "; ")
-                end
-                c = c.__cont__
-        end
-        code(io, c)
 end
 
 codegen(io::IO, c::IR.Code) = code(io, c)

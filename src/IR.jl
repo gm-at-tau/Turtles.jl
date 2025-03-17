@@ -28,6 +28,9 @@ function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
         return Struct{tag,keys(t),Tuple{values(t)...}}()
 end
 
+Base.zero(s::Struct{Tag,Fields,Types}) where {Tag,Fields,Types} =
+        s(zip(Fields, zero.(Types))...)
+
 # Language (IR)
 
 function newid()
@@ -74,11 +77,12 @@ struct Bind{T} <: Code{T}
         __cont__::Code{T}
         Bind(val::Code, cell::V, cont::Code{T}) where {T} = new{T}(val, cell, cont)
         Bind(val::Code, ::V, ::Nothing) = val
+        Bind(val::Code, cell::V, c) = Bind(val, cell, cte(c))
 end
 
 struct Blk{T} <: Code{T}
         __lbl__::L
-        __blk__::Code{Nothing}
+        __blk__::Code{T}
 end
 
 struct Ret{T} <: Code{Nothing}
@@ -89,9 +93,9 @@ end
 struct Proc{T,Ts<:Tuple} <: Atom{Function}
         __symbol__::Symbol
         __cells__::Ts
-        __block__::Ref{Blk{T}}
-        Proc(s, cells::Ts, r::Blk{T}) where {T,Ts} =
-                new{T,Ts}(s, cells, Ref{Blk{T}}(r))
+        __block__::Ref{Code{T}}
+        Proc(s, cells::Ts, r::Code{T}) where {T,Ts} =
+                new{T,Ts}(s, cells, Ref{Code{T}}(r))
 end
 
 struct If{T} <: Code{T}
@@ -100,7 +104,7 @@ struct If{T} <: Code{T}
         __iffalse__::Code{T}
 end
 
-struct BreakContinue <: Atom{Nothing}
+struct BreakContinue <: Atom{BreakContinue}
         __break__::Bool
 end
 
@@ -143,8 +147,6 @@ end
 init(t::Code{T}) where {T<:Struct} = Init{T}(t)
 init(t::String) = Init{Ptr{UInt8}}(pointer(t))
 
-block(c::Blk) = c
-block(c::Code) = block(blk -> blk.return(c))
 function block(f::Function)
         local lbl = L()
         local rettype = Ref{Union{Type,Nothing}}(nothing)
@@ -160,11 +162,8 @@ function block(f::Function)
 
         local blk = (; var"return"=val -> Ret(lbl, ret(val)))
         local val = Notation.apply(f, blk)
-        if type(val) != Nothing
-                val = blk.return(val)
-        elseif isnothing(rettype[])
-                rettype[] = Nothing
-        end
+        isnothing(rettype[]) && return val
+        val = ret(val)
         return Blk{rettype[]}(lbl, val)
 end
 
@@ -173,8 +172,8 @@ function loop(f::Function)
         local blk = (; var"break"=Ret(lbl, BreakContinue(true)),
                 var"continue"=Ret(lbl, BreakContinue(false)))
         local val = Notation.apply(f, blk)
-        if type(val) != Nothing
-                val = blk.continue(val)
+        if type(val) == Nothing
+                val = Notation.bind(val, () -> BreakContinue(false))
         end
         Loop(Blk{BreakContinue}(lbl, val))
 end
@@ -188,7 +187,7 @@ function proc(s::Symbol, f::Function)
         local types = type.(sig[2:end])
         local cells = tuple([R{ty}() for ty = types]...)
         local val = f(cells...)
-        Proc(s, cells, block(val))
+        Proc(s, cells, val)
 end
 
 # Extensions

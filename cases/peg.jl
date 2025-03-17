@@ -52,36 +52,37 @@ const t = IR.struct(:peg_t,
 
 function reader(peg::Seq, env)
         @code IR.block() do blk
-                Turtles.stamp(peg.rules) do r
+                IR.for(peg.rules) do r
                         rt := reader(r, env)
                         if !rt
                                 blk.return(false)
                         end
                 end
-                blk.return(true)
+                true
         end
 end
 
 function reader(peg::Alt, env)
         @code IR.block() do blk
-                Turtles.stamp(peg.alts) do r
+                IR.for(peg.alts) do r
                         rt := reader(r, env)
                         if rt
                                 blk.return(true)
                         end
                 end
-                blk.return(false)
+                false
         end
 end
 
 function reader(peg::Iter, env)
-        @code IR.block() do blk
-                IR.loop() do
+        @code begin
+                IR.loop() do blk
                         rt := reader(peg.it, env)
                         if !rt
-                                blk.return(true)
+                                blk.break
                         end
                 end
+                true
         end
 end
 
@@ -98,13 +99,14 @@ function reader(peg::CharSet, env)
 end
 
 function chars_reader(anychar, env)
-        @code IR.block() do blk
+        @code begin
                 rt := env.txt[env.idx]
                 if !anychar(rt)
-                        blk.return(false)
+                        false
+                else
+                        env.idx = env.idx + 1
+                        true
                 end
-                env.idx = env.idx + 1
-                blk.return(true)
         end
 end
 

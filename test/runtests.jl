@@ -17,12 +17,12 @@ function gcc(filename::String, code::String)
 end
 
 @testset "syntax" begin
-        c = @code IR.block() do blk
+        c = @code begin
                 a := IR.local(0)
                 IR.for(IR.init(32)) do i
                         a = a + i
                 end
-                blk.return(a)
+                a
         end
         @info SSA.translate(c)
 end
@@ -36,7 +36,7 @@ end
                                         blk.return(true)
                                 end
                         end
-                        blk.return(false)
+                        false
                 end
         end
         StringView = IR.struct(:string_view,
@@ -79,14 +79,14 @@ end
         end
 
         @info IR.proc(:fibonacci, (n::IR.R{Int}) -> gibonacci(promote(0, 1, n)...))
-	@proc IR.Code{Int} function gib5(x::IR.R{Int}, y::IR.R{Int})
+        @proc IR.Code{Int} function gib5(x::IR.R{Int}, y::IR.R{Int})
                 gibonacci(promote(x, y, 5)...)
         end
         gcc("test_gibonacci", compile(gib5))
 
-	# N.B. Recursive function cannot have top-level [@code]
+        # N.B. Recursive function cannot have top-level [@code]
         function recur_gibonacci(x::IR.Code{Int}, y::IR.Code{Int}, n::IR.Code{Int})
-		@code ((n == 0) ? x : IR.let(recur_gibonacci)(y, x + y, n - 1))
+                @code ((n == 0) ? x : IR.let(recur_gibonacci)(y, x + y, n - 1))
         end
         @info IR.proc(:recur_gib5, (x::IR.R{Int}, y::IR.R{Int}) ->
                 recur_gibonacci(promote(x, y, 5)...))
@@ -110,9 +110,12 @@ end
                 Turtles.defer(if (i > 0)
                         i = i + 1 # N.B. immutable return
                 end)
-                i = i + IR.block() do blk_i
+                i = i + IR.block() do e
                         i = i + 5
-                        blk_i.return(2)
+                        if i > 2
+                                e.return(2)
+                        end
+                        4
                 end
                 if i == 4
                         blk.return(i + 1)
