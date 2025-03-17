@@ -22,14 +22,14 @@ IR.for(f::Function, r::AbstractVector) = stamp(f, r)
 IR.for(f::Function, c::Int) = IR.for(f, 0:c-1)
 IR.for(f::Function, c::IR.CTE{Int}) = IR.for(f, c.__val__)
 
-struct OpenLabel <: Function
+struct FreeLabel <: Function
         func::Function
         labels::Set{IR.L}
 end
 
-(ls::OpenLabel)(c::IR.Code) = IR.visit(c, ls)
-(ls::OpenLabel)(c::IR.Blk) = (push!(ls.labels, c.__lbl__); IR.visit(c, ls))
-function (ls::OpenLabel)(c::IR.Ret)
+(ls::FreeLabel)(c::IR.Code) = IR.visit(c, ls)
+(ls::FreeLabel)(c::IR.Blk) = (push!(ls.labels, c.__lbl__); IR.visit(c, ls))
+function (ls::FreeLabel)(c::IR.Ret)
         c.__lbl__ in ls.labels && return IR.visit(c, ls)
         ls.func(IR.visit(c, ls))
 end
@@ -42,13 +42,13 @@ defer(onexit::Function) = Defer(onexit=Notation.apply(onexit))
 defer(onexit::IR.Code{Nothing}) = Defer(onexit=onexit)
 
 function Notation.bind(df::Defer, f::Function)
-        local openlabel = OpenLabel(Set()) do c
+        local freelabel = FreeLabel(Set()) do c
                 # N.B. immutable return
                 Notation.bind(c.__val__, (v) ->
                         Notation.bind(df.onexit, () ->
                                 IR.Ret(c.__lbl__, v)))
         end
-        Notation.bind(openlabel(Notation.apply(f)), (v) ->
+        Notation.bind(freelabel(Notation.apply(f)), (v) ->
                 Notation.bind(df.onexit, () -> v))
 end
 

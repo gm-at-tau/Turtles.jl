@@ -160,7 +160,7 @@ function code(io::IO, c::IR.Proc)
         print(io, "fn (")
         join(io, c.__cells__, ", ")
         print(io, ") ")
-        code(io, c.__block__[])
+        code(io, c.__proc__[])
 end
 
 

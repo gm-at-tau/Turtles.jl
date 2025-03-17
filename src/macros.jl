@@ -75,7 +75,7 @@ macro proc(ret, q)
         cell = IR.R{ty}()
         r = quote
                 $name = $(IR.proc)($(QuoteNode(name)), $(Expr(:function, sig, Expr(:block, cell))))
-                $name.__block__[] = ($(Expr(:function, sig, blk)))($name.__cells__...)
+                $name.__proc__[] = ($(Expr(:function, sig, blk)))($name.__cells__...)
         end
         return esc(r)
 end

@@ -93,7 +93,7 @@ end
 struct Proc{T,Ts<:Tuple} <: Atom{Function}
         __symbol__::Symbol
         __cells__::Ts
-        __block__::Ref{Code{T}}
+        __proc__::Ref{Code{T}}
         Proc(s, cells::Ts, r::Code{T}) where {T,Ts} =
                 new{T,Ts}(s, cells, Ref{Code{T}}(r))
 end

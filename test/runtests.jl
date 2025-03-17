@@ -107,9 +107,7 @@ end
 @testset "defer" begin
         c = @code IR.block() do blk
                 i := IR.local(0)
-                Turtles.defer(if (i > 0)
-                        i = i + 1 # N.B. immutable return
-                end)
+                Turtles.defer(() -> i = i + 1) # N.B. immutable return
                 i = i + IR.block() do e
                         i = i + 5
                         if i > 2
@@ -118,7 +116,7 @@ end
                         4
                 end
                 if i == 4
-                        blk.return(i + 1)
+                        blk.return(i + 3)
                 end
                 i
         end

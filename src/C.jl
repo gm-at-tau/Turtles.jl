@@ -79,13 +79,13 @@ end
 function (fwd::Forward)(c::IR.Proc{T,Ts}) where {T,Ts}
         local proc = get!(fwd.procs, c.__symbol__) do
                 local phi = Phi()
-                c.__block__[] = translate(c.__block__[], phi)
+                c.__proc__[] = translate(c.__proc__[], phi)
                 return c
         end
         for c = proc.__cells__
                 fwd(c)
         end
-        fwd(proc.__block__[])
+        fwd(proc.__proc__[])
 end
 function (fwd::Forward)(c::IR.Code{IR.Struct{Tag,Fields,Types}}) where {Tag,Fields,Types}
         fwd.structs[Tag] = IR.type(c)()
@@ -123,7 +123,7 @@ end
 function codegen(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
         procedure(io, c)
         print(io, " { ")
-        blk = c.__block__[]
+        blk = c.__proc__[]
         if blk isa IR.Bind
                 code(io, blk)
         else
@@ -147,7 +147,7 @@ function code(io::IO, b::IR.Bind)
                 end
                 c = c.__cont__
         end
-	if IR.type(c) in (Nothing, IR.BreakContinue)
+        if IR.type(c) in (Nothing, IR.BreakContinue)
                 code(io, c)
         else
                 print(io, "return ")
@@ -184,9 +184,12 @@ function code(io::IO, c::IR.If)
         code(io, c.__bool__)
         print(io, ") { ")
         code(io, c.__iftrue__)
-        print(io, " } else { ")
-        code(io, c.__iffalse__)
         print(io, " } ")
+        if !(c.__iffalse__ isa CTE{Nothing})
+                print(io, " else { ")
+                code(io, c.__iffalse__)
+                print(io, " } ")
+        end
 end
 
 function code(io::IO, c::IR.Loop)
@@ -198,7 +201,7 @@ function code(io::IO, c::IR.Loop)
         print(io, "} $(blk.__lbl__)_b:; ")
 end
 
-code(::IO, ::IR.BreakContinue) = nothing
+code(io::IO, bc::IR.BreakContinue) = (print(io, bc); print(io, ";"))
 
 function code(io::IO, c::IR.Fn{Nothing})
         if c.__keyword__ == :←
