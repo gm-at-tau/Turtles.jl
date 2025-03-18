@@ -123,7 +123,7 @@ end
         @info C.translate(c)
 end
 
-include("../cases/peg.jl")
+include("peg.jl")
 
 @testset "peg" begin
         digit = PEG.range('0':'9')
@@ -138,7 +138,7 @@ include("../cases/peg.jl")
         gcc("test_peg", compile(digits))
 end
 
-include("../cases/loop.jl")
+include("loop.jl")
 
 @testset "loop" begin
         esq = Loop.pipe(
