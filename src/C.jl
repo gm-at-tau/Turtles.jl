@@ -39,11 +39,11 @@ end
 (phi::Phi)(c::IR.Blk{IR.BreakContinue}) =
         (phi.labels[c.__lbl__] = R{IR.BreakContinue}(); IR.visit(c, phi))
 (phi::Phi)(c::IR.Blk{T}) where {T} =
-        Notation.bind(IR.local(zero(T)), function (m)
+        Notation.bind(IR.mut(zero(T)), function (m)
                 phi.labels[c.__lbl__] = m
                 ret = Notation.:←(m, phi(c.__blk__))
                 # N.B. Change of type
-                Notation.bind(IR.Blk{Nothing}(c.__lbl__, ret), () -> m)
+                Notation.bind(IR.Blk{Nothing}(c.__lbl__, ret), () -> m[])
         end)
 (phi::Phi)(c::IR.Ret) =
         let m = phi.labels[c.__lbl__]
@@ -162,6 +162,8 @@ function code(io::IO, c::IR.Blk)
         code(io, c.__blk__)
         print(io, "} $(c.__lbl__):; ")
 end
+
+code(io::IO, c::IR.Deref) = code(io, c.__ref__)
 
 function code(io::IO, c::IR.Ret)
         if c.__val__ isa IR.R

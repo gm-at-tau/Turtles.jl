@@ -45,11 +45,6 @@ Base.convert(::Type{Free}, r::Char) = char(r)
 
 # Reader
 
-const t = IR.struct(:peg_t,
-        :idx => Int,
-        :txt => Ptr{UInt8},
-)
-
 function reader(peg::Seq, env)
         @code IR.block() do blk
                 IR.for(peg.rules) do r
@@ -100,11 +95,11 @@ end
 
 function chars_reader(anychar, env)
         @code begin
-                rt := env.txt[env.idx]
+                rt := env.txt[env.idx[]]
                 if !anychar(rt)
                         false
                 else
-                        env.idx = env.idx + 1
+                        env.idx = env.idx[] + 1
                         true
                 end
         end

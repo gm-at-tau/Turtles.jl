@@ -58,7 +58,7 @@ struct R{T} <: V{T}
 end
 
 global newmutable = newid()
-struct M{T} <: V{T}
+struct M{T} <: V{Ref{T}}
         __id__::UInt16
         M{T}() where {T} = new{T}(newmutable())
 end
@@ -75,7 +75,8 @@ struct Bind{T} <: Code{T}
         __val__::Code
         __cell__::V
         __cont__::Code{T}
-        Bind(val::Code{S}, cell::V{S}, cont::Code{T}) where {T,S} = new{T}(val, cell, cont)
+        Bind(val::Code{S}, cell::R{S}, cont::Code{T}) where {T,S} = new{T}(val, cell, cont)
+        Bind(val::Code{S}, cell::M{S}, cont::Code{T}) where {T,S} = new{T}(val, cell, cont)
         Bind(val::Code{S}, cell::V{S}, c) where {S} = Bind(val, cell, cte(c))
 end
 
@@ -116,6 +117,10 @@ struct Fn{T} <: Code{T}
         __args__::Vector{Code}
 end
 
+struct Deref{T} <: Code{T}
+        __ref__::Code{Ref{T}}
+end
+
 function visit end
 
 visit(t::C, ::Function) where {C<:Atom} = t
@@ -132,6 +137,8 @@ visit(t::Blk{T}, f::Function) where {T} =
         Blk{T}(t.__lbl__, f(t.__blk__))
 visit(t::Ret{T}, f::Function) where {T} =
         Ret{T}(t.__lbl__, f(t.__val__))
+visit(t::Deref{T}, f::Function) where {T} =
+        Deref{T}(f(t.__ref__))
 
 # Constructors
 
@@ -218,21 +225,21 @@ function (fn::Let{F})(args::Vararg{Code}) where {F}
         return genlet(args...)
 end
 
-struct Local{T}
+struct Mut{T}
         __init__::Code{T}
 end
 
-var"local"(t::Code{T}) where {T} = Local{T}(t)
-var"local"(t::T) where {T} = Local{T}(cte(t))
+mut(t::Code{T}) where {T} = Mut{T}(t)
+mut(t::T) where {T} = Mut{T}(cte(t))
 
 var"while"(v::Function, c::Code{Bool}) = var"while"(c, v)
 var"while"(c::Code{Bool}, v::Function) =
         loop(blk -> Notation.if(c, () -> Notation.apply(v, blk), () -> blk.break))
 
-var"for"(f::Function, c::Code) =
-        Notation.bind(var"local"(0), i ->
-                var"while"(i < c) do blk
-                        Notation.bind(i, r -> # N.B. Immutable
+var"for"(f::Function, c::Code{Int}) =
+        Notation.bind(mut(0), i ->
+                var"while"(i[] < c) do blk
+                        Notation.bind(i[], r -> # N.B. Immutable
                                 Notation.bind(Notation.:←(i, r + 1), () ->
                                         Notation.apply(f, r, blk)))
                 end)
@@ -258,7 +265,7 @@ end
 Notation.bind(c::R, f::Function) = f(c)
 Notation.bind(c::CTE, f::Function) = f(c.__val__)
 
-function Notation.bind(c::Local{T}, f::Function) where {T}
+function Notation.bind(c::Mut{T}, f::Function) where {T}
         local cell = M{T}()
         local val = Notation.apply(f, cell)
         Bind(c.__init__, cell, val)
@@ -290,7 +297,9 @@ function (c::Struct{Tag,NT})(args...) where {Tag,NT}
         Fn{Struct{Tag,NT}}(INIT, inits)
 end
 
-# N.B. No overloading of setproperty! and setindex! (see Meta.@lower setindex!)
+# N.B. No overloading of setproperty! and setindex! (see Meta.@lower (a[] = 1))
+
+Base.getindex(c::Code{Ref{T}}) where {T} = Deref{T}(c)
 
 Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
         Fn{T}(INDEX, [c, s])

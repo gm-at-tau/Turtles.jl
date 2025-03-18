@@ -18,11 +18,11 @@ end
 
 @testset "syntax" begin
         c = @code begin
-                a := IR.local(0)
+                a := IR.mut(0)
                 IR.for(IR.init(32)) do i
-                        a = a + i
+                        a[] = a[] + i
                 end
-                a
+                a[]
         end
         @info C.translate(c)
 end
@@ -44,7 +44,7 @@ end
                 :size => Int,
         )
         @proc function alldigit(s::IR.R{Ptr{UInt8}})
-                array := IR.local(StringView(s, 0))
+                array := StringView(s, 0)
                 stl_all(array) do c
                         (c >= UInt8('0')) & (c <= UInt8('9'))
                 end
@@ -55,11 +55,11 @@ end
 
 @testset "unrolling" begin
         @code function pow(x::IR.Code{Int}, n::IR.Code{Int})
-                p := IR.local(1)
+                p := IR.mut(1)
                 IR.for(n) do
-                        p = p * x
+                        p[] = p[] * x
                 end
-                p
+                p[]
         end
 
         @info IR.proc(:pow, pow)
@@ -68,14 +68,14 @@ end
 
 @testset "gibonacci" begin
         @code function gibonacci(x::IR.Code{Int}, y::IR.Code{Int}, n::IR.Code{Int})
-                x := IR.local(x)
-                y := IR.local(y)
+                x := IR.mut(x)
+                y := IR.mut(y)
                 IR.for(n) do
-                        z := x + y
-                        x = y
-                        y = z
+                        z := x[] + y[]
+                        x[] = y[]
+                        y[] = z
                 end
-                x
+                x[]
         end
 
         @info IR.proc(:fibonacci, (n::IR.R{Int}) -> gibonacci(promote(0, 1, n)...))
@@ -106,19 +106,19 @@ end
 
 @testset "defer" begin
         c = @code IR.block() do blk
-                i := IR.local(0)
-                Turtles.defer(() -> i = i + 1) # N.B. immutable return
-                i = i + IR.block() do e
-                        i = i + 5
-                        if i > 2
+                i := IR.mut(0)
+                Turtles.defer(() -> i[] = i[] + 1) # N.B. immutable return
+                i[] = i[] + IR.block() do e
+                        i[] = i[] + 5
+                        if i[] > 2
                                 e.return(2)
                         end
                         4
                 end
-                if i == 4
-                        blk.return(i + 3)
+                if i[] == 4
+                        blk.return(i[] + 3)
                 end
-                i
+                i[]
         end
         @info C.translate(c)
 end
@@ -130,9 +130,9 @@ include("../cases/peg.jl")
         integer = PEG.seq(digit, PEG.iter(PEG.alt(digit, '_')))
 
         @proc function digits(txt::IR.R{Ptr{UInt8}})
-                env := IR.local(PEG.t(0, txt))
-                ok := PEG.reader(integer, env)
-                env.idx
+                idx := IR.mut(0)
+                ok := PEG.reader(integer, NamedTuple([:idx => idx, :txt => txt]))
+                idx[]
         end
         # @info C.compile(digits)
         gcc("test_peg", compile(digits))
@@ -148,11 +148,11 @@ include("../cases/loop.jl")
         )
 
         @proc function even_squares(n::IR.R{Int})
-                a := IR.local(0)
+                a := IR.mut(0)
                 Loop.loop(Loop.pipe(Loop.iter(n), esq)) do ct
-                        a = a + ct.it
+                        a[] = a[] + ct.it
                 end
-                a
+                a[]
         end
         # @info C.compile(even_squares)
         gcc("test_loop", compile(even_squares))

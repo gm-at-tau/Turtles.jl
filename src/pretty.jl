@@ -18,6 +18,7 @@ function indent(f::Function)
         global INDENT -= 1
 end
 
+code(io::IO, c::IR.Deref) = (print(io, "#"); code(io, c.__ref__))
 code(io::IO, c::IR.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
 
 function code(io::IO, c::IR.Blk)

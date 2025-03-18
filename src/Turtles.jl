@@ -25,7 +25,8 @@ var"if"(bool::Bool, iftrue::Function, iffalse::Function) =
                 iffalse()
         end
 
-←(r::Ref{T}, t::T) where {T} = setindex!(r, t)
+←(ref, val, index...) = setindex!(ref, val, index...)
+←(ref::NamedTuple, val, s::Symbol) = ←(getfield(ref, s), val)
 
 end
 
