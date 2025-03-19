@@ -15,8 +15,6 @@ ssa(c::IR.Code) = IR.visit(c, ssa)
 
 ssa(c::IR.Fn) = IR.let((args...) ->
         typeof(c)(c.__keyword__, collect(args)))(ssa.(c.__args__)...)
-ssa(c::IR.Ret) = IR.let((ret) ->
-        typeof(c)(c.__lbl__, ret))(ssa(c.__val__))
 ssa(c::IR.If) = IR.let((bool) ->
         typeof(c)(bool, ssa(c.__iftrue__), ssa(c.__iffalse__)))(ssa(c.__bool__))
 
@@ -41,14 +39,14 @@ end
 (phi::Phi)(c::IR.Blk{T}) where {T} =
         Notation.bind(IR.mut(zero(T)), function (m)
                 phi.labels[c.__lbl__] = m
-                ret = Notation.:←(m, phi(c.__blk__))
+                ret = Notation.bind(phi(c.__blk__), r -> Notation.:←(m, r))
                 # N.B. Change of type
                 Notation.bind(IR.Blk{Nothing}(c.__lbl__, ret), () -> m[])
         end)
 (phi::Phi)(c::IR.Ret) =
         let m = phi.labels[c.__lbl__]
                 m isa M || return c
-                ret = Notation.:←(m, phi(c.__val__))
+                ret = Notation.bind(phi(c.__val__), r -> Notation.:←(m, r))
                 Notation.bind(ret, () -> IR.Ret{Nothing}(c.__lbl__, nothing))
         end
 

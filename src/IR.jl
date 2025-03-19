@@ -87,7 +87,7 @@ end
 
 struct Ret{T} <: Code{Nothing}
         __lbl__::L
-        __val__::Code{T}
+        __val__::Atom{T}
 end
 
 struct Proc{T,Ts<:Tuple} <: Atom{Function}
@@ -107,6 +107,8 @@ end
 struct BreakContinue <: Atom{BreakContinue}
         __break__::Bool
 end
+const Break = BreakContinue(true)
+const Continue = BreakContinue(false)
 
 struct Loop <: Code{Nothing}
         __blk__::Blk{BreakContinue}
@@ -166,7 +168,7 @@ function block(f::Function)
                 return code
         end
 
-        local blk = (; var"return"=val -> Ret(lbl, ret(val)))
+        local blk = (; var"return"=var"let"(val -> Ret(lbl, ret(val))))
         local val = Notation.apply(f, blk)
         isnothing(rettype[]) && return val
         val = ret(val)
@@ -175,8 +177,7 @@ end
 
 function loop(f::Function)
         local lbl = L()
-        local blk = (; var"break"=Ret(lbl, BreakContinue(true)),
-                var"continue"=Ret(lbl, BreakContinue(false)))
+        local blk = (; var"break"=Ret(lbl, Break), var"continue"=Ret(lbl, Continue))
         local val = Notation.apply(f, blk)
         if type(val) == Nothing
                 val = Notation.bind(val, () -> BreakContinue(false))
@@ -205,25 +206,31 @@ end
 var"let"(fn::F) where {F} = Let(fn)
 
 (fn::Let{F})(args::Vararg) where {F} = fn.f(args...)
-function (fn::Let{F})(args::Vararg{Code}) where {F}
-        local v = Code[]
-        sizehint!(v, length(args))
-        function genlet()
-                @assert length(v) == length(args) "$(args => v)"
-                fn.f(v...)
+(fn::Let{F})(args::Vararg{Code}) where {F} = genlet(fn.f, args...)
+
+function genlet(f::Function, args::Vararg{Code})
+        local tail = reverse!(collect(args))
+        local head = Code[]
+        sizehint!(head, length(tail))
+        function recur()
+                if isempty(tail)
+                        @assert length(head) == length(args) "$(args => head)"
+                        return f(head...)
+                end
+                a = pop!(tail)
+                if a isa Atom
+                        push!(head, a)
+                        recur() # tailcall
+                else
+                        Notation.bind(a, function (b)
+                                push!(head, b)
+                                recur()
+                        end)
+                end
         end
-        function genlet(a::Atom, tail::Vararg{Code})
-                push!(v, a)
-                genlet(tail...)
-        end
-        function genlet(a::Code, tail::Vararg{Code})
-                Notation.bind(a, function (b)
-                        push!(v, b)
-                        genlet(tail...)
-                end)
-        end
-        return genlet(args...)
+        return recur()
 end
+
 
 struct Mut{T}
         __init__::Code{T}
@@ -313,6 +320,7 @@ function Base.getproperty(c::Code{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
 end
 
 Notation.:←(c::M{T}, v::Code{T}) where {T} = Fn{Nothing}(:←, [c, v])
+Notation.:←(c::M{T}, v::T) where {T} = Fn{Nothing}(:←, [c, v])
 
 function Notation.:←(c::Fn{T}, v::Code{T}) where {T}
         @assert c.__args__[1] isa M
