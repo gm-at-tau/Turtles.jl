@@ -37,9 +37,6 @@ typename(::Type{Nothing}) = "void"
 typename(::Type{T}) where {T<:Integer} = lowercase(string(T, "_t"))
 typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
 
-names(::Type{IR.Struct{Tag,NT}}) where {Tag,NT} = fieldnames(NT)
-names(::Type{T}) where {T} = [nothing]
-
 function code(io::IO, c::IR.Fn{T}) where {T}
         if c.__keyword__ isa IR.Proc
                 print(io, c.__keyword__.__symbol__)
@@ -51,7 +48,7 @@ function code(io::IO, c::IR.Fn{T}) where {T}
                 if isempty(c.__args__)
                         print(io, "0")
                 end
-                for (a, k) = zip(c.__args__, names(T))
+                for (a, k) = zip(c.__args__, fieldnames(T))
                         isnothing(k) || print(io, ".$k = ")
                         code(io, a)
                         print(io, ", ")

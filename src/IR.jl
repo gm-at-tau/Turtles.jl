@@ -28,6 +28,7 @@ function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
         return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}()
 end
 
+Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT} = fieldnames(NT)
 Base.zero(s::Struct{Tag,NT}) where {Tag,NT} =
         s(zip(fieldnames(NT), zero.(fieldtypes(NT)))...)
 

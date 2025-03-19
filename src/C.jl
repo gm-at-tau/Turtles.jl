@@ -139,8 +139,11 @@ function code(io::IO, b::IR.Bind)
                 end
                 c = c.__cont__
         end
-        if IR.type(c) in (Nothing, IR.BreakContinue)
+        if IR.type(c) == Nothing
                 code(io, c)
+        elseif IR.type(c) == IR.BreakContinue
+                print(io, c)
+                print(io, "; ")
         else
                 print(io, "return ")
                 code(io, c)
@@ -160,7 +163,7 @@ function code(io::IO, c::IR.Ret)
         if c.__val__ isa IR.R
                 @assert c.__lbl__.__id__ == 0x0 "`return` outside of function"
                 print(io, "return ")
-                code(io, c.__val__)
+                print(io, c.__val__)
                 print(io, "; ")
         elseif c.__val__ isa IR.BreakContinue
                 if c.__val__.__break__
@@ -193,31 +196,6 @@ function code(io::IO, c::IR.Loop)
         code(io, blk.__blk__)
         print(io, "} $(blk.__lbl__)_c:; ")
         print(io, "} $(blk.__lbl__)_b:; ")
-end
-
-code(io::IO, bc::IR.BreakContinue) = (print(io, bc); print(io, ";"))
-
-function code(io::IO, c::IR.Fn{Nothing})
-        if c.__keyword__ == :←
-                print(io, c.__args__[1])
-                print(io, " = ")
-                code(io, c.__args__[2])
-                print(io, "; ")
-        elseif c.__keyword__ == IR.FIELD
-                print(io, c.__args__[1])
-                print(io, ".$(c.__args__[2].__val__) = ")
-                code(io, c.__args__[3])
-                print(io, "; ")
-        elseif c.__keyword__ == IR.INDEX
-                print(io, c.__args__[1])
-                print(io, "[")
-                code(io, c.__args__[2])
-                print(io, "] = ")
-                code(io, c.__args__[3])
-                print(io, "; ")
-        else
-                throw(ArgumentError("Cannot show $(c.__keyword__)"))
-        end
 end
 
 codegen(io::IO, c::IR.Code) = code(io, c)
