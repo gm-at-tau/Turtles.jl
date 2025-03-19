@@ -99,7 +99,7 @@ struct Proc{T,Ts<:Tuple} <: Atom{Function}
 end
 
 struct If{T} <: Code{T}
-        __bool__::Code{Bool}
+        __bool__::Atom{Bool}
         __iftrue__::Code{T}
         __iffalse__::Code{T}
 end
@@ -116,11 +116,11 @@ end
 
 struct Fn{T} <: Code{T}
         __keyword__::Union{Symbol,Proc}
-        __args__::Vector{Code}
+        __args__::Vector{Atom}
 end
 
 struct Deref{T} <: Code{T}
-        __ref__::Code{Ref{T}}
+        __ref__::Atom{Ref{T}}
 end
 
 function visit end
@@ -185,9 +185,17 @@ function loop(f::Function)
         Loop(Blk{BreakContinue}(lbl, val))
 end
 
-var"if"(c::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
-        If{T}(c, iftrue, iffalse)
-var"if"(c::Code{Bool}, iftrue::Code) = var"if"(c, iftrue, CTE{Nothing}(nothing))
+var"if"(bool::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
+        genlet(b -> If{T}(b, iftrue, iffalse), bool)
+var"if"(bool::Code{Bool}, iftrue::Code) =
+        var"if"(bool, iftrue, CTE{Nothing}(nothing))
+
+fn(::Type{T}, keyword, args::Vector{<:Code}) where {T} =
+        genlet((a...) -> Fn{T}(keyword, collect(a)), args...)
+fn(::Type{T}, keyword, args::Vararg{Code}) where {T} =
+        genlet((a...) -> Fn{T}(keyword, collect(a)), args...)
+fn(::Type{T}, keyword, args::Vararg) where {T} =
+	fn(T, keyword, convert.(Code, args)...)
 
 function proc(s::Symbol, f::Function)
         local sig = tuple(only(methods(f)).sig.types...)
@@ -269,7 +277,7 @@ function Notation.bind(c::Code{T}, f::Function) where {T}
         Bind(c, cell, val)
 end
 
-Notation.bind(c::R, f::Function) = f(c)
+Notation.bind(c::Atom, f::Function) = f(c)
 Notation.bind(c::CTE, f::Function) = f(c.__val__)
 
 function Notation.bind(c::Mut{T}, f::Function) where {T}
@@ -295,43 +303,35 @@ const FIELD = Symbol(".")
 
 function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
         @assert all(type.(args) .== type.(Ts.types)) "Type mismatch"
-        Fn{T}(c, [args...])
+        fn(T, c, args...)
 end
 
 function (c::Struct{Tag,NT})(args...) where {Tag,NT}
-        local inits = convert.(Code, collect(args))
+        local inits = convert.(Code, args)
         @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
-        Fn{Struct{Tag,NT}}(INIT, inits)
+        fn(Struct{Tag,NT}, INIT, inits...)
 end
 
 # N.B. No overloading of setproperty! and setindex! (see Meta.@lower (a[] = 1))
 
 Base.getindex(c::Code{Ref{T}}) where {T} = Deref{T}(c)
-
-Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
-        Fn{T}(INDEX, [c, s])
+Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} = fn(T, INDEX, c, s)
 
 isfield(s::String) = startswith(s, "__")
 
 function Base.getproperty(c::Code{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         isfield(string(s)) && return getfield(c, s)
         local idx = only(findall(fieldnames(NT) .== s))
-        Fn{fieldtypes(NT)[idx]}(FIELD, [c, CTE{Symbol}(s)])
+        fn(fieldtypes(NT)[idx], FIELD, c, CTE{Symbol}(s))
 end
 
-Notation.:←(c::M{T}, v::Code{T}) where {T} = Fn{Nothing}(:←, [c, v])
-Notation.:←(c::M{T}, v::T) where {T} = Fn{Nothing}(:←, [c, v])
-
-function Notation.:←(c::Fn{T}, v::Code{T}) where {T}
-        @assert c.__args__[1] isa M
-        @assert c.__keyword__ in (FIELD, INDEX)
-        Fn{Nothing}(c.__keyword__, [c.__args__; v])
-end
+Notation.:←(c::M{T}, v::Code{T}) where {T} = fn(Nothing, :←, c, v)
+Notation.:←(c::M{T}, v::T) where {T} = fn(Nothing, :←, c, v)
 
 const ARITY_1 = (:+, :-, :!, :~)
 
 for e = ARITY_1
-        @eval Base.$e(val::Code{T}) where {T} = Fn{T}($(QuoteNode(e)), [val])
+        @eval Base.$e(val::Code{T}) where {T} = fn(T, $(QuoteNode(e)), val)
 end
 
 const ARITY_2 = (:+, :-, :*, :/, :%, :|, :&, :⊻, :<, :(==), :(<=))
@@ -339,17 +339,17 @@ const ARITY_2 = (:+, :-, :*, :/, :%, :|, :&, :⊻, :<, :(==), :(<=))
 for e = ARITY_2
         if e == :<
                 Base.isless(lhs::Code{T}, rhs::Code{T}) where {T} =
-                        Fn{Bool}(:<, [lhs, rhs])
+                        fn(Bool, :<, lhs, rhs)
                 Base.isless(lhs::CTE{T}, rhs::CTE{T}) where {T} =
                         CTE{Bool}(lhs.__val__ < rhs.__val__)
         elseif e in (:(==), :(<=))
                 @eval Base.$e(lhs::Code{T}, rhs::Code{T}) where {T} =
-                        Fn{Bool}($(QuoteNode(e)), [lhs, rhs])
+                        fn(Bool, $(QuoteNode(e)), lhs, rhs)
                 @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T} =
                         CTE{Bool}($e(lhs.__val__, rhs.__val__))
         else
                 @eval Base.$e(lhs::Code{T}, rhs::Code{T}) where {T} =
-                        Fn{T}($(QuoteNode(e)), [lhs, rhs])
+                        fn(T, $(QuoteNode(e)), lhs, rhs)
                 @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T} =
                         CTE{T}($e(lhs.__val__, rhs.__val__))
         end

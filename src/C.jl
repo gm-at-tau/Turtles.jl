@@ -11,13 +11,6 @@ using ..IR
 using ..Notation
 using ..PrettyPrint
 
-ssa(c::IR.Code) = IR.visit(c, ssa)
-
-ssa(c::IR.Fn) = IR.let((args...) ->
-        typeof(c)(c.__keyword__, collect(args)))(ssa.(c.__args__)...)
-ssa(c::IR.If) = IR.let((bool) ->
-        typeof(c)(bool, ssa(c.__iftrue__), ssa(c.__iffalse__)))(ssa(c.__bool__))
-
 struct Phi <: Function
         labels::Dict{L,V}
         Phi() = new(Dict{L,V}())
@@ -63,7 +56,7 @@ flat(c::IR.Bind) =
 flat(c::IR.Ret) =
         hoist(flat(c.__val__), (v) -> IR.Ret(c.__lbl__, v))
 
-translate(c::IR.Code, phi::Phi=Phi()) = flat(ssa(phi(c)))
+translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(c))
 
 struct Forward <: Function
         procs::Dict{Symbol,IR.Proc}
