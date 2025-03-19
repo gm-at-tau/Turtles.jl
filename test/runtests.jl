@@ -28,7 +28,26 @@ end
 end
 
 @testset "generic" begin
-        function stl_all(predicate, array)
+        @code function find(s::IR.R{Ptr{UInt8}},
+                n::IR.R{Int}, p::Function)
+                IR.block() do blk
+                        IR.for(n) do i
+                                if p(s[i])
+                                        blk.return(i)
+                                end
+                        end
+                        -1
+                end
+        end
+        @proc function find_elt(s::IR.R{Ptr{UInt8}}, n::IR.R{Int}, elt::IR.R{UInt8})
+                find(s, n, c -> c == elt)
+        end
+        # @info compile(find_elt)
+        gcc("test_generic", compile(find_elt))
+end
+
+@testset "struct" begin
+        function alltrue(predicate, array)
                 @code IR.block() do blk
                         IR.for(array.size) do i
                                 v := array.ptr[i]
@@ -43,14 +62,13 @@ end
                 :ptr => Ptr{UInt8},
                 :size => Int,
         )
-        @proc function alldigit(s::IR.R{Ptr{UInt8}})
-                array := StringView(s, 0)
-                stl_all(array) do c
+        @proc function alldigit(array::IR.R{StringView})
+                alltrue(array) do c
                         (c >= UInt8('0')) & (c <= UInt8('9'))
                 end
         end
-        @info compile(alldigit)
-        gcc("test_generic", compile(alldigit))
+        # @info compile(alldigit)
+        gcc("test_struct", compile(alldigit))
 end
 
 @testset "unrolling" begin

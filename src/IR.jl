@@ -25,11 +25,12 @@ struct Struct{Tag,NT<:NamedTuple} end
 
 function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
         local t = NamedTuple(fields)
-        return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}()
+        return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}
 end
 
-Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT} = fieldnames(NT)
-Base.zero(s::Struct{Tag,NT}) where {Tag,NT} =
+Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} =
+        fieldnames(NT::NamedTuple)
+Base.zero(::Type{Struct{Tag,NT}}) where {Tag,NT} =
         s(zip(fieldnames(NT), zero.(fieldtypes(NT)))...)
 
 # Language (IR)
@@ -65,10 +66,6 @@ struct M{T} <: V{Ref{T}}
 end
 
 struct CTE{T} <: Atom{T}
-        __val__::T
-end
-
-struct Init{T} <: Atom{T}
         __val__::T
 end
 
@@ -149,13 +146,6 @@ for ty = TYPES
         @eval cte(t::$ty) = CTE{$ty}(t)
 end
 
-for ty = TYPES
-        @eval init(t::$ty) = Init{$ty}(t)
-end
-
-init(t::Code{T}) where {T<:Struct} = Init{T}(t)
-init(t::String) = Init{Ptr{UInt8}}(pointer(t))
-
 function block(f::Function)
         local lbl = L()
         local rettype = Ref{Union{Type,Nothing}}(nothing)
@@ -196,7 +186,7 @@ fn(::Type{T}, keyword, args::Vector{<:Code}) where {T} =
 fn(::Type{T}, keyword, args::Vararg{Code}) where {T} =
         genlet((a...) -> Fn{T}(keyword, collect(a)), args...)
 fn(::Type{T}, keyword, args::Vararg) where {T} =
-	fn(T, keyword, convert.(Code, args)...)
+        fn(T, keyword, convert.(Code, args)...)
 
 function proc(s::Symbol, f::Function)
         local sig = tuple(only(methods(f)).sig.types...)
@@ -205,17 +195,6 @@ function proc(s::Symbol, f::Function)
         local val = f(cells...)
         Proc(s, cells, val)
 end
-
-# Extensions
-
-struct Let{F}
-        f::F
-end
-
-var"let"(fn::F) where {F} = Let(fn)
-
-(fn::Let{F})(args::Vararg) where {F} = fn.f(args...)
-(fn::Let{F})(args::Vararg{Code}) where {F} = genlet(fn.f, args...)
 
 function genlet(f::Function, args::Vararg{Code})
         local tail = reverse!(collect(args))
@@ -240,25 +219,44 @@ function genlet(f::Function, args::Vararg{Code})
         return recur()
 end
 
+# Extensions
+
+struct Let{F}
+        f::F
+end
+
+var"let"(fn::F) where {F} = Let(fn)
+
+struct Init{T}
+        __init__::T
+end
+
+init(t::String) = Init{Ptr{UInt8}}(pointer(t))
 
 struct Mut{T}
         __init__::Code{T}
 end
 
 mut(t::Code{T}) where {T} = Mut{T}(t)
-mut(t::T) where {T} = Mut{T}(cte(t))
+
+for ty = TYPES
+        @eval init(t::$ty) = Init{$ty}(t)
+        @eval mut(t::$ty) = Mut{$ty}(t)
+end
 
 var"while"(v::Function, c::Code{Bool}) = var"while"(c, v)
 var"while"(c::Code{Bool}, v::Function) =
         loop(blk -> Notation.if(c, () -> Notation.apply(v, blk), () -> blk.break))
 
-var"for"(f::Function, c::Code{Int}) =
-        Notation.bind(mut(0), i ->
-                var"while"(i[] < c) do blk
-                        Notation.bind(i[], r -> # N.B. Immutable
-                                Notation.bind(Notation.:←(i, r + 1), () ->
-                                        Notation.apply(f, r, blk)))
-                end)
+_forloop(f, c) = Notation.bind(mut(0), i ->
+        var"while"(i[] < c) do blk
+                Notation.bind(i[], r -> # N.B. Immutable
+                        Notation.bind(Notation.:←(i, r + 1), () ->
+                                Notation.apply(f, r, blk)))
+        end)
+
+var"for"(f::Function, c::Code{Int}) = _forloop(f, c)
+var"for"(f::Function, c::Init{Int}) = _forloop(f, c.__init__)
 
 # Conversions
 
@@ -278,12 +276,21 @@ function Notation.bind(c::Code{T}, f::Function) where {T}
         Bind(c, cell, val)
 end
 
-Notation.bind(c::Atom, f::Function) = f(c)
-Notation.bind(c::CTE, f::Function) = f(c.__val__)
+Notation.bind(c::Atom, f::Function) = Notation.apply(f, c)
+Notation.bind(c::CTE, f::Function) = Notation.apply(f, c.__val__)
+
+
+function Notation.bind(c::Init{T}, f::Function) where {T}
+        local cell = R{T}()
+        local val = Notation.apply(f, cell)
+        isnothing(val) && return c
+        Bind(CTE{T}(c.__init__), cell, val)
+end
 
 function Notation.bind(c::Mut{T}, f::Function) where {T}
         local cell = M{T}()
         local val = Notation.apply(f, cell)
+        isnothing(val) && return c
         Bind(c.__init__, cell, val)
 end
 
@@ -307,11 +314,14 @@ function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
         fn(T, c, args...)
 end
 
-function (c::Struct{Tag,NT})(args...) where {Tag,NT}
+function (::Type{Struct{Tag,NT}})(args...) where {Tag,NT}
         local inits = convert.(Code, args)
         @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
         fn(Struct{Tag,NT}, INIT, inits...)
 end
+
+(fn::Let{F})(args::Vararg) where {F} = fn.f(args...)
+(fn::Let{F})(args::Vararg{Code}) where {F} = genlet(fn.f, args...)
 
 # N.B. No overloading of setproperty! and setindex! (see Meta.@lower (a[] = 1))
 

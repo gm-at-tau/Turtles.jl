@@ -44,9 +44,7 @@ defer(onexit::IR.Code{Nothing}) = Defer(onexit=onexit)
 function Notation.bind(df::Defer, f::Function)
         local freelabel = FreeLabel(Set()) do c
                 # N.B. immutable return
-                Notation.bind(c.__val__, (v) ->
-                        Notation.bind(df.onexit, () ->
-                                IR.Ret(c.__lbl__, v)))
+                Notation.bind(df.onexit, () -> IR.Ret(c.__lbl__, c.__val__))
         end
         Notation.bind(freelabel(Notation.apply(f)), (v) ->
                 Notation.bind(df.onexit, () -> v))
