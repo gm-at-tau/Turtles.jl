@@ -56,15 +56,12 @@ function code(io::IO, c::IR.Fn{T}) where {T}
                 end
                 print(io, " }")
         elseif length(c.__args__) == 1
-                print(io, "$(c.__keyword__)(")
+                print(io, c.__keyword__)
                 code(io, c.__args__[1])
-                print(io, ")")
         elseif length(c.__args__) == 2
-                print(io, "(")
                 code(io, c.__args__[1])
                 print(io, " $(c.__keyword__) ")
                 code(io, c.__args__[2])
-                print(io, ")")
         else
                 throw(ArgumentError("Cannot show $(c.__keyword__)"))
         end
@@ -104,25 +101,21 @@ end
 
 function code(io::IO, c::IR.Index)
         if c.__index__ isa Symbol
-                print(io, c.__head__)
+                code(io, c.__head__)
                 print(io, ".$(c.__index__)")
         else
-                print(io, c.__head__)
+                code(io, c.__head__)
                 print(io, "[")
                 code(io, c.__index__)
                 print(io, "]")
         end
 end
 
-function code(io::IO, c::IR.Fn{Nothing})
-        if c.__keyword__ == :←
-                print(io, c.__args__[1])
-                print(io, " = ")
-                print(io, c.__args__[2])
-                print(io, "; ")
-        else
-                throw(ArgumentError("Cannot show $(c.__keyword__)"))
-        end
+function code(io::IO, c::IR.Write)
+        code(io, c.__ref__)
+        print(io, " = ")
+        code(io, c.__val__)
+        print(io, "; ")
 end
 
 function code(io::IO, b::IR.Bind)

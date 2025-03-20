@@ -12,8 +12,8 @@ using ..Notation
 using ..PrettyPrint
 
 struct Phi <: Function
-        labels::Dict{L,V}
-        Phi() = new(Dict{L,V}())
+        labels::Dict{IR.L,IR.V}
+        Phi() = new(Dict{IR.L,IR.V}())
 end
 
 (phi::Phi)(c::IR.Code) = IR.visit(c, phi)
@@ -38,19 +38,18 @@ end
         end)
 (phi::Phi)(c::IR.Ret) =
         let m = phi.labels[c.__lbl__]
-                m isa M || return c
+                m isa IR.M || return c
                 ret = Notation.:←(m, phi(c.__val__))
                 Notation.bind(ret, () -> IR.Ret{Nothing}(c.__lbl__, nothing))
         end
 
 flat(c::IR.Code) = IR.visit(c, flat)
+flat(c::IR.Bind) =
+        hoist(flat(c.__val__), (v) -> IR.Bind(v, c.__cell__, flat(c.__cont__)))
 
 hoist(c::IR.Code, f::Function) = f(c)
 hoist(c::IR.Bind, f::Function) =
         flat(IR.Bind(c.__val__, c.__cell__, hoist(c.__cont__, f)))
-
-flat(c::IR.Bind) =
-        hoist(flat(c.__val__), (v) -> IR.Bind(v, c.__cell__, flat(c.__cont__)))
 
 translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(c))
 

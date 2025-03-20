@@ -45,11 +45,11 @@ Base.convert(::Type{Free}, r::Char) = char(r)
 
 # Reader
 
-function reader(peg::Seq, env)
+function reader(peg::Seq, env)::IR.Code{Bool}
         @code IR.block() do blk
                 IR.for(peg.rules) do r
-                        rt := reader(r, env)
-                        if !rt
+                        ok := reader(r, env)
+                        if !ok
                                 blk.return(false)
                         end
                 end
@@ -57,11 +57,11 @@ function reader(peg::Seq, env)
         end
 end
 
-function reader(peg::Alt, env)
+function reader(peg::Alt, env)::IR.Code{Bool}
         @code IR.block() do blk
                 IR.for(peg.alts) do r
-                        rt := reader(r, env)
-                        if rt
+                        ok := reader(r, env)
+                        if ok
                                 blk.return(true)
                         end
                 end
@@ -69,11 +69,11 @@ function reader(peg::Alt, env)
         end
 end
 
-function reader(peg::Iter, env)
+function reader(peg::Iter, env)::IR.Code{Bool}
         @code begin
                 IR.loop() do blk
-                        rt := reader(peg.it, env)
-                        if !rt
+                        ok := reader(peg.it, env)
+                        if !ok
                                 blk.break
                         end
                 end
@@ -81,22 +81,22 @@ function reader(peg::Iter, env)
         end
 end
 
-function reader(peg::CharRange, env)
-        chars_reader(env) do c
+function reader(peg::CharRange, env)::IR.Code{Bool}
+        chars_reader(env) do c::IR.Code{UInt8}
                 (c >= UInt8(peg.rg.start)) & (c <= UInt8(peg.rg.stop))
         end
 end
 
-function reader(peg::CharSet, env)
-        chars_reader(env) do c
+function reader(peg::CharSet, env)::IR.Code{Bool}
+        chars_reader(env) do c::IR.Code{UInt8}
                 mapfoldl(set -> c == UInt8(set), |, peg.set)
         end
 end
 
-function chars_reader(anychar, env)
+function chars_reader(anychar, env)::IR.Code{Bool}
         @code begin
-                rt := env.txt[env.idx[]]
-                if !anychar(rt)
+                c := env.txt[env.idx[]][]
+                if !anychar(c)
                         false
                 else
                         env.idx = env.idx[] + 1

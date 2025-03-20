@@ -7,7 +7,7 @@
 
 module IR
 
-export V, R, M, L, CTE
+export Atom, R, CTE
 
 using ..Turtles
 using ..Notation
@@ -28,6 +28,7 @@ struct L
 end
 
 abstract type Atom{T} <: Code{T} end
+
 abstract type V{T} <: Atom{T} end
 
 global newregister = newid()
@@ -104,6 +105,12 @@ struct Deref{T} <: Code{T}
         __ref__::Atom{Ref{T}}
 end
 
+struct Write <: Code{Nothing}
+        __ref__::Atom{Ref{T}} where {T}
+        __val__::Code
+        Write(ref::Atom{Ref{T}}, val::Code{T}) where {T} = new(ref, val)
+end
+
 function visit end
 
 visit(t::C, ::Function) where {C<:Atom} = t
@@ -113,9 +120,11 @@ visit(t::If{T}, f::Function) where {T} =
 visit(t::Loop, f::Function) = Loop(f(t.__blk__))
 visit(t::Fn{T}, f::Function) where {T} =
         Fn{T}(t.__keyword__, f.(t.__args__))
+visit(t::Write, f::Function) =
+        Write(f(t.__ref__), f(t.__val__))
 
 visit(t::Bind{T}, f::Function) where {T} =
-        Bind(f(t.__val__), f(t.__cell__), f(t.__cont__))
+        Bind(f(t.__val__), t.__cell__, f(t.__cont__))
 visit(t::Blk{T}, f::Function) where {T} =
         Blk{T}(t.__lbl__, f(t.__blk__))
 visit(t::Ret{T}, f::Function) where {T} =
@@ -191,8 +200,6 @@ var"if"(bool::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
 var"if"(bool::Code{Bool}, iftrue::Code) =
         var"if"(bool, iftrue, CTE{Nothing}(nothing))
 
-fn(::Type{T}, keyword, args::Vector{<:Code}) where {T} =
-        genlet((a...) -> Fn{T}(keyword, collect(a)), args...)
 fn(::Type{T}, keyword, args::Vararg{Code}) where {T} =
         genlet((a...) -> Fn{T}(keyword, collect(a)), args...)
 fn(::Type{T}, keyword, args::Vararg) where {T} =
@@ -207,7 +214,7 @@ function proc(s::Symbol, f::Function)
 end
 
 function genlet(f::Function, args::Vararg{Code})
-        local tail = reverse!(collect(args))
+        local tail = reverse!(collect(Code, args))
         local head = Code[]
         sizehint!(head, length(tail))
         function recur()
@@ -215,10 +222,14 @@ function genlet(f::Function, args::Vararg{Code})
                         @assert length(head) == length(args) "$(args => head)"
                         return f(head...)
                 end
-                a = pop!(tail)
+                local a = pop!(tail)
                 if a isa Atom
                         push!(head, a)
                         recur() # tailcall
+                elseif a isa Bind
+                        push!(tail, a.__cont__)
+                        local val = recur()
+                        Bind(a.__val__, a.__cell__, val)
                 else
                         Notation.bind(a, function (b)
                                 push!(head, b)
@@ -286,9 +297,12 @@ function Notation.bind(c::Code{T}, f::Function) where {T}
         Bind(c, cell, val)
 end
 
-Notation.bind(c::Atom, f::Function) = Notation.apply(f, c)
 Notation.bind(c::CTE, f::Function) = Notation.apply(f, c.__val__)
-
+Notation.bind(c::Atom, f::Function) = Notation.apply(f, c)
+function Notation.bind(c::Atom{Ref{T}}, f::Function) where {T}
+        @info "binding an lvalue will copy the value"
+        Notation.apply(f, c)
+end
 
 function Notation.bind(c::Init{T}, f::Function) where {T}
         local cell = R{T}()
@@ -325,9 +339,12 @@ end
 
 # N.B. No overloading of setproperty! and setindex! (see Meta.@lower (a[] = 1))
 
-Base.getindex(c::Code{Ref{T}}) where {T} = Deref{T}(c)
+Base.getindex(c::Code{Ref{T}}) where {T} =
+        genlet(h -> Deref{T}(h), c)
 Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
         genlet((h, a) -> Index{T}(h, a), c, s)
+Base.getindex(c::Atom{Ptr{T}}, s::Code{Int}) where {T} =
+        genlet(a -> Index{Ref{T}}(c, a), s)
 Base.getindex(c::Code{Ref{Ptr{T}}}, s::Code{Int}) where {T} =
         genlet((h, a) -> Index{Ref{T}}(h, a), c, s)
 
@@ -351,13 +368,18 @@ function Base.getproperty(c::Code{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT
         genlet(h -> Index{Ref{T}}(h, s), c)
 end
 
-Notation.:←(c::Code{Ref{T}}, v::Code{T}) where {T} = fn(Nothing, :←, c, v)
-Notation.:←(c::Code{Ref{T}}, v::T) where {T} = fn(Nothing, :←, c, v)
+Notation.:←(c::Code{Ref{T}}, v::Code{T}) where {T} =
+        genlet((a, h) -> Write(h, a), v, c) # N.B. reverse order
+Notation.:←(c::Atom{Ref{T}}, v::T) where {T} = Notation.:←(c, cte(v))
 
 const ARITY_1 = (:+, :-, :!, :~)
 
 for e = ARITY_1
-        @eval Base.$e(val::Code{T}) where {T} = fn(T, $(QuoteNode(e)), val)
+        if e == :!
+                @eval Base.$e(val::Code{Bool}) = fn(Bool, $(QuoteNode(e)), val)
+        else
+                @eval Base.$e(val::Code{T}) where {T} = fn(T, $(QuoteNode(e)), val)
+        end
 end
 
 const ARITY_2 = (:+, :-, :*, :/, :%, :|, :&, :⊻, :<, :(==), :(<=))

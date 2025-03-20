@@ -32,7 +32,7 @@ end
                 n::IR.R{Int}, p::Function)
                 IR.block() do blk
                         IR.for(n) do i
-                                if p(s[i])
+                                if p(s[i][])
                                         blk.return(i)
                                 end
                         end
@@ -40,17 +40,27 @@ end
                 end
         end
         @proc function find_elt(s::IR.R{Ptr{UInt8}}, n::IR.R{Int}, elt::IR.R{UInt8})
-                find(s, n, c -> c == elt)
+                find(s, n, (c::IR.Code{UInt8}) -> c == elt)
         end
         # @info compile(find_elt)
         gcc("test_generic", compile(find_elt))
+end
+
+@testset "pointers and references" begin
+        @proc function memory_copy(dest::IR.R{Ptr{UInt8}}, src::IR.R{Ptr{UInt8}}, n::IR.R{Int})
+                IR.for(n) do i
+                        dest[i] = src[i][]
+                end
+        end
+        # @info compile(find_elt)
+        gcc("test_pointer", compile(memory_copy))
 end
 
 @testset "struct" begin
         function alltrue(predicate, array)
                 @code IR.block() do blk
                         IR.for(array.size) do i
-                                v := array.ptr[i]
+                                v := array.ptr[i][]
                                 if predicate(v)
                                         blk.return(true)
                                 end
@@ -70,10 +80,10 @@ end
 
         @proc function arbitrary(array::IR.R{StringView})
                 m := IR.mut(array)
-		if alldigit(m[])
-			m.size[] = m.size[] + 1
+                if alldigit(m[])
+                        m.size[] = m.size[] + 1
                 end
-		m[]
+                m[]
         end
         # @info compile(alldigit)
         gcc("test_struct", compile(arbitrary))
