@@ -32,20 +32,18 @@ end
 (phi::Phi)(c::IR.Blk{T}) where {T} =
         Notation.bind(IR.mut(zero(T)), function (m)
                 phi.labels[c.__lbl__] = m
-                ret = Notation.bind(phi(c.__blk__), r -> Notation.:←(m, r))
+                ret = Notation.:←(m, phi(c.__blk__))
                 # N.B. Change of type
                 Notation.bind(IR.Blk{Nothing}(c.__lbl__, ret), () -> m[])
         end)
 (phi::Phi)(c::IR.Ret) =
         let m = phi.labels[c.__lbl__]
                 m isa M || return c
-                ret = Notation.bind(phi(c.__val__), r -> Notation.:←(m, r))
+                ret = Notation.:←(m, phi(c.__val__))
                 Notation.bind(ret, () -> IR.Ret{Nothing}(c.__lbl__, nothing))
         end
 
 flat(c::IR.Code) = IR.visit(c, flat)
-flat(c::IR.Blk) = IR.visit(c, flat)
-flat(c::IR.If{Nothing}) = IR.visit(c, flat)
 
 hoist(c::IR.Code, f::Function) = f(c)
 hoist(c::IR.Bind, f::Function) =
@@ -53,8 +51,6 @@ hoist(c::IR.Bind, f::Function) =
 
 flat(c::IR.Bind) =
         hoist(flat(c.__val__), (v) -> IR.Bind(v, c.__cell__, flat(c.__cont__)))
-flat(c::IR.Ret) =
-        hoist(flat(c.__val__), (v) -> IR.Ret(c.__lbl__, v))
 
 translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(c))
 
@@ -79,7 +75,7 @@ function (fwd::Forward)(c::IR.Proc{T,Ts}) where {T,Ts}
         fwd(proc.__proc__[])
 end
 function (fwd::Forward)(c::IR.Code{IR.Struct{Tag,NT}}) where {Tag,NT}
-        fwd.structs[Tag] = IR.type(c)()
+        fwd.structs[Tag] = IR.type(c)(nothing)
         IR.visit(c, fwd)
 end
 

@@ -12,36 +12,14 @@ export V, R, M, L, CTE
 using ..Turtles
 using ..Notation
 
-abstract type Code{T} end
-
-# Types
-
-type(::Type{<:Code{T}}) where {T} = T
-type(::C) where {T,C<:Code{T}} = T
-
-const TYPES = (Int32, Int64, UInt8, Bool, Nothing, Ptr{UInt8})
-
-struct Struct{Tag,NT<:NamedTuple} end
-
-function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
-        local t = NamedTuple(fields)
-        return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}
+function newid()
+        COUNTER = 0
+        () -> UInt16(COUNTER += 1)
 end
-
-Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} =
-        fieldnames(NT::NamedTuple)
-Base.zero(::Type{Struct{Tag,NT}}) where {Tag,NT} =
-        s(zip(fieldnames(NT), zero.(fieldtypes(NT)))...)
 
 # Language (IR)
 
-function newid()
-        COUNTER = 0
-        function ()
-                COUNTER += 1
-                return UInt16(COUNTER)
-        end
-end
+abstract type Code{T} end
 
 global newlabel = newid()
 struct L
@@ -139,6 +117,34 @@ visit(t::Ret{T}, f::Function) where {T} =
         Ret{T}(t.__lbl__, f(t.__val__))
 visit(t::Deref{T}, f::Function) where {T} =
         Deref{T}(f(t.__ref__))
+
+# Types
+
+type(::Type{<:Code{T}}) where {T} = T
+type(::C) where {T,C<:Code{T}} = T
+
+const TYPES = (Int32, Int64, UInt8, Bool, Nothing, Ptr{UInt8})
+
+struct Struct{Tag,NT<:NamedTuple}
+        Struct{Tag,NT}(::Nothing) where {Tag,NT} = new{Tag,NT}()
+        function Struct{Tag,NT}(args...) where {Tag,NT}
+                local inits = convert.(Code, args)
+                @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
+                fn(Struct{Tag,NT}, INIT, inits...)
+        end
+end
+
+function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
+        local t = NamedTuple(fields)
+        return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}
+end
+
+Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} =
+        fieldnames(NT::NamedTuple)
+Base.zero(t::Type{Struct{Tag,NT}}) where {Tag,NT} =
+        t(zip(fieldnames(NT), zero.(fieldtypes(NT)))...)
+
+
 
 # Constructors
 
@@ -312,12 +318,6 @@ const FIELD = Symbol(".")
 function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
         @assert all(type.(args) .== type.(Ts.types)) "Type mismatch"
         fn(T, c, args...)
-end
-
-function (::Type{Struct{Tag,NT}})(args...) where {Tag,NT}
-        local inits = convert.(Code, args)
-        @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
-        fn(Struct{Tag,NT}, INIT, inits...)
 end
 
 (fn::Let{F})(args::Vararg) where {F} = fn.f(args...)
