@@ -35,20 +35,16 @@ function _rebind(lines::Vector{Any})
         return blk
 end
 
-function _assign(ref, val)
-        if Meta.isexpr(ref, :ref) || Meta.isexpr(ref, :(.))
-                Expr(:call, :(Turtles.Notation.:←), _code(ref.args[1]), _code(val), _code(ref.args[2:end])...)
-        else
-                Expr(:call, :(Turtles.Notation.:←), _code(ref), _code(val))
-        end
-end
-
 function _code(q::Expr)
         if Meta.isexpr(q, :block)
                 Expr(:block, _rebind(q.args)...)
         elseif Meta.isexpr(q, :(=))
-                @assert Meta.isexpr(q, :(=))
-                _assign(q.args[1], q.args[2])
+                @assert length(q.args) == 2
+                local ref, val = q.args
+                if Meta.isexpr(ref, :ref, 1)
+			ref = ref.args[1]
+                end
+		Expr(:call, :(Turtles.Notation.:←), _code(ref), _code(val))
         elseif Meta.isexpr(q, :if) || Meta.isexpr(q, :elseif)
                 _if(_code.(q.args)...)
         elseif Meta.isexpr(q, :while)

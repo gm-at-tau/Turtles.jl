@@ -18,7 +18,7 @@ function indent(f::Function)
         global INDENT -= 1
 end
 
-code(io::IO, c::IR.Deref) = (print(io, "#"); code(io, c.__ref__))
+code(io::IO, c::IR.Deref) = (print(io, "("); code(io, c.__ref__); print(io, ")"))
 code(io::IO, c::IR.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
 
 function code(io::IO, c::IR.Blk)
@@ -36,6 +36,7 @@ typename(::Type{Bool}) = "bool"
 typename(::Type{Nothing}) = "void"
 typename(::Type{T}) where {T<:Integer} = lowercase(string(T, "_t"))
 typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
+typename(::Type{Ref{T}}) where {T} = typename(T)
 
 function code(io::IO, c::IR.Fn{T}) where {T}
         if c.__keyword__ isa IR.Proc
@@ -43,7 +44,7 @@ function code(io::IO, c::IR.Fn{T}) where {T}
                 print(io, "(")
                 join(io, c.__args__, ", ")
                 print(io, ")")
-        elseif c.__keyword__ == IR.INIT
+        elseif c.__keyword__ == :init
                 print(io, "($(typename(T))){ ")
                 if isempty(c.__args__)
                         print(io, "0")
@@ -59,22 +60,11 @@ function code(io::IO, c::IR.Fn{T}) where {T}
                 code(io, c.__args__[1])
                 print(io, ")")
         elseif length(c.__args__) == 2
-                if c.__keyword__ == IR.FIELD
-                        code(io, c.__args__[1])
-                        print(io, ".$(c.__args__[2].__val__)")
-                elseif c.__keyword__ == IR.INDEX
-                        code(io, c.__args__[1])
-                        print(io, "[")
-                        code(io, c.__args__[2])
-                        print(io, "]")
-                else
-                        print(io, "(")
-                        code(io, c.__args__[1])
-                        print(io, " $(c.__keyword__) ")
-                        code(io, c.__args__[2])
-                        print(io, ")")
-                end
-
+                print(io, "(")
+                code(io, c.__args__[1])
+                print(io, " $(c.__keyword__) ")
+                code(io, c.__args__[2])
+                print(io, ")")
         else
                 throw(ArgumentError("Cannot show $(c.__keyword__)"))
         end
@@ -112,23 +102,23 @@ function code(io::IO, c::IR.Loop)
         code(io, c.__blk__)
 end
 
+function code(io::IO, c::IR.Index)
+        if c.__index__ isa Symbol
+                print(io, c.__head__)
+                print(io, ".$(c.__index__)")
+        else
+                print(io, c.__head__)
+                print(io, "[")
+                code(io, c.__index__)
+                print(io, "]")
+        end
+end
+
 function code(io::IO, c::IR.Fn{Nothing})
         if c.__keyword__ == :←
                 print(io, c.__args__[1])
                 print(io, " = ")
                 print(io, c.__args__[2])
-                print(io, "; ")
-        elseif c.__keyword__ == IR.FIELD
-                print(io, c.__args__[1])
-                print(io, ".$(c.__args__[2].__val__) = ")
-                code(io, c.__args__[3])
-                print(io, "; ")
-        elseif c.__keyword__ == IR.INDEX
-                print(io, c.__args__[1])
-                print(io, "[")
-                code(io, c.__args__[2])
-                print(io, "] = ")
-                code(io, c.__args__[3])
                 print(io, "; ")
         else
                 throw(ArgumentError("Cannot show $(c.__keyword__)"))
@@ -165,7 +155,6 @@ end
 for ty = IR.TYPES
         ty in (Ptr{UInt8}, Nothing) && continue
         @eval code(io::IO, c::CTE{$ty}) = print(io, c.__val__)
-        @eval code(io::IO, c::IR.Init{$ty}) = print(io, c.__val__)
 end
 
 code(io::IO, c::IR.M) = print(io, "m$(c.__id__)")
@@ -175,7 +164,6 @@ code(::IO, ::CTE{Nothing}) = nothing
 code(io::IO, ::IR.Init{Nothing}) = print(io, "{}")
 
 code(io::IO, c::CTE{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
-code(io::IO, c::IR.Init{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
 
 Base.show(io::IO, c::IR.Code) = code(io, c)
 Base.show(io::IO, c::IR.L) = print(io, "L$(c.__id__)")

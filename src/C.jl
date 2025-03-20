@@ -153,8 +153,6 @@ function code(io::IO, c::IR.Blk)
         print(io, "} $(c.__lbl__):; ")
 end
 
-code(io::IO, c::IR.Deref) = code(io, c.__ref__)
-
 function code(io::IO, c::IR.Ret)
         if c.__val__ isa IR.R
                 @assert c.__lbl__.__id__ == 0x0 "`return` outside of function"

@@ -95,6 +95,11 @@ struct Fn{T} <: Code{T}
         __args__::Vector{Atom}
 end
 
+struct Index{T} <: Atom{T}
+        __head__::Atom
+        __index__::Union{Symbol,Atom}
+end
+
 struct Deref{T} <: Code{T}
         __ref__::Atom{Ref{T}}
 end
@@ -130,7 +135,7 @@ struct Struct{Tag,NT<:NamedTuple}
         function Struct{Tag,NT}(args...) where {Tag,NT}
                 local inits = convert.(Code, args)
                 @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
-                fn(Struct{Tag,NT}, INIT, inits...)
+                fn(Struct{Tag,NT}, :init, inits...)
         end
 end
 
@@ -139,12 +144,11 @@ function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
         return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}
 end
 
+Base.pairs(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} = NT::NamedTuple
 Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} =
         fieldnames(NT::NamedTuple)
 Base.zero(t::Type{Struct{Tag,NT}}) where {Tag,NT} =
         t(zip(fieldnames(NT), zero.(fieldtypes(NT)))...)
-
-
 
 # Constructors
 
@@ -311,10 +315,6 @@ Notation.if(bool::CTE, iftrue::Function) =
 Notation.if(bool::CTE, iftrue::Function, iffalse::Function) =
         Notation.if(bool.__val__, iftrue, iffalse)
 
-const INIT = Symbol("{}")
-const INDEX = Symbol("[]")
-const FIELD = Symbol(".")
-
 function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
         @assert all(type.(args) .== type.(Ts.types)) "Type mismatch"
         fn(T, c, args...)
@@ -326,18 +326,33 @@ end
 # N.B. No overloading of setproperty! and setindex! (see Meta.@lower (a[] = 1))
 
 Base.getindex(c::Code{Ref{T}}) where {T} = Deref{T}(c)
-Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} = fn(T, INDEX, c, s)
+Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
+        genlet((h, a) -> Index{T}(h, a), c, s)
+Base.getindex(c::Code{Ref{Ptr{T}}}, s::Code{Int}) where {T} =
+        genlet((h, a) -> Index{Ref{T}}(h, a), c, s)
 
 isfield(s::String) = startswith(s, "__")
 
-function Base.getproperty(c::Code{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
-        isfield(string(s)) && return getfield(c, s)
-        local idx = only(findall(fieldnames(NT) .== s))
-        fn(fieldtypes(NT)[idx], FIELD, c, CTE{Symbol}(s))
+function _propertytype(t::Type{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
+        local found = findall(fieldnames(NT) .== s)
+        @assert length(found) == 1 "Found $(found) matching types"
+        fieldtypes(NT)[only(found)]
 end
 
-Notation.:←(c::M{T}, v::Code{T}) where {T} = fn(Nothing, :←, c, v)
-Notation.:←(c::M{T}, v::T) where {T} = fn(Nothing, :←, c, v)
+function Base.getproperty(c::Code{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
+        isfield(string(s)) && return getfield(c, s)
+        local T = _propertytype(Struct{Tag,NT}, s)
+        genlet(h -> Index{T}(h, s), c)
+end
+
+function Base.getproperty(c::Code{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT}
+        isfield(string(s)) && return getfield(c, s)
+        local T = _propertytype(Struct{Tag,NT}, s)
+        genlet(h -> Index{Ref{T}}(h, s), c)
+end
+
+Notation.:←(c::Code{Ref{T}}, v::Code{T}) where {T} = fn(Nothing, :←, c, v)
+Notation.:←(c::Code{Ref{T}}, v::T) where {T} = fn(Nothing, :←, c, v)
 
 const ARITY_1 = (:+, :-, :!, :~)
 

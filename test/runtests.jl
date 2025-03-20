@@ -67,8 +67,16 @@ end
                         (c >= UInt8('0')) & (c <= UInt8('9'))
                 end
         end
+
+        @proc function arbitrary(array::IR.R{StringView})
+                m := IR.mut(array)
+		if alldigit(m[])
+			m.size[] = m.size[] + 1
+                end
+		m[]
+        end
         # @info compile(alldigit)
-        gcc("test_struct", compile(alldigit))
+        gcc("test_struct", compile(arbitrary))
 end
 
 @testset "unrolling" begin
