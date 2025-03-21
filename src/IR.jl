@@ -240,6 +240,11 @@ function genlet(f::Function, args::Vararg{Code})
         return recur()
 end
 
+addr(m::M{T}) where {T} =
+        let r = R{Ref{T}}()
+                Bind(m, r, r)
+        end
+
 # Extensions
 
 struct Let{F}

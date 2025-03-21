@@ -126,6 +126,7 @@ function code(io::IO, b::IR.Bind)
         while c isa IR.Bind
                 if IR.type(c.__val__) == Nothing
                         code(io, c.__val__)
+                        print(io, "; ")
                 else
                         print(io, declare(c.__cell__))
                         print(io, " = ")

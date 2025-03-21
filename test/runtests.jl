@@ -11,8 +11,8 @@ using Test
 function gcc(filename::String, code::String)
         write("$filename.c", code)
         # [TODO] Compile with Clang_jll
-        CFLAGS = `-Wno-unused-function` # `-Wall -Wextra`
-        run(`gcc -O2 $CFLAGS -c $filename.c -o $filename.o`)
+        CC = `gcc -O2 -std=c99 -Wall -Wextra -Wno-unused-variable -Wno-unused-label`
+        run(`$CC -c $filename.c -o $filename.o`)
         run(`rm $filename.c $filename.o`)
 end
 
@@ -145,6 +145,20 @@ end
         end
         # @info C.compile(max3)
         gcc("test_max3", compile(maxsum))
+end
+
+@testset "ref passing" begin
+        @proc function add(a::IR.R{Ref{Int}}, b::IR.R{Int})
+                a[] = a[] + b
+        end
+
+        @proc function add2(x::IR.R{Int})
+                m := IR.mut(x)
+                add(IR.addr(m), x)
+                m[]
+        end
+        @info compile(add2)
+        gcc("test_double", compile(add2))
 end
 
 @testset "defer" begin
