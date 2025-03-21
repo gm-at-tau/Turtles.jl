@@ -29,20 +29,20 @@ end
 
 abstract type Atom{T} <: Code{T} end
 
-abstract type V{T} <: Atom{T} end
-
 global newregister = newid()
-struct R{T} <: V{T}
+struct R{T} <: Atom{T}
         __id__::UInt16
         R{T}() where {T} = new{T}(newregister())
         R{Nothing}() = new(0x0)
 end
 
 global newmutable = newid()
-struct M{T} <: V{Ref{T}}
+struct M{T} <: Atom{Ref{T}}
         __id__::UInt16
         M{T}() where {T} = new{T}(newmutable())
 end
+
+const V{T} = Union{R{T},M{T}}
 
 struct CTE{T} <: Atom{T}
         __val__::T
@@ -96,13 +96,9 @@ struct Fn{T} <: Code{T}
         __args__::Vector{Atom}
 end
 
-struct Index{T} <: Atom{T}
+struct Index{T} <: Code{T}
         __head__::Atom
-        __index__::Union{Symbol,Atom}
-end
-
-struct Deref{T} <: Code{T}
-        __ref__::Atom{Ref{T}}
+        __index__::Union{Nothing,Symbol,Atom}
 end
 
 struct Write <: Code{Nothing}
@@ -120,6 +116,8 @@ visit(t::If{T}, f::Function) where {T} =
 visit(t::Loop, f::Function) = Loop(f(t.__blk__))
 visit(t::Fn{T}, f::Function) where {T} =
         Fn{T}(t.__keyword__, f.(t.__args__))
+visit(t::Index{T}, f::Function) where {T} =
+        Index{T}(f(t.__head__), (t.__index__ isa Code) ? f(t.__index__) : t.__index__)
 visit(t::Write, f::Function) =
         Write(f(t.__ref__), f(t.__val__))
 
@@ -129,13 +127,15 @@ visit(t::Blk{T}, f::Function) where {T} =
         Blk{T}(t.__lbl__, f(t.__blk__))
 visit(t::Ret{T}, f::Function) where {T} =
         Ret{T}(t.__lbl__, f(t.__val__))
-visit(t::Deref{T}, f::Function) where {T} =
-        Deref{T}(f(t.__ref__))
 
 # Types
 
 type(::Type{<:Code{T}}) where {T} = T
 type(::C) where {T,C<:Code{T}} = T
+
+isref(::R{Ref{T}}) where {T} = true
+isref(::V{Ptr{T}}) where {T} = false
+isref(::V) = false
 
 const TYPES = (Int32, Int64, UInt8, Bool, Nothing, Ptr{UInt8})
 
@@ -299,10 +299,6 @@ end
 
 Notation.bind(c::CTE, f::Function) = Notation.apply(f, c.__val__)
 Notation.bind(c::Atom, f::Function) = Notation.apply(f, c)
-function Notation.bind(c::Atom{Ref{T}}, f::Function) where {T}
-        @info "binding an lvalue will copy the value"
-        Notation.apply(f, c)
-end
 
 function Notation.bind(c::Init{T}, f::Function) where {T}
         local cell = R{T}()
@@ -340,15 +336,17 @@ end
 # N.B. No overloading of setproperty! and setindex! (see Meta.@lower (a[] = 1))
 
 Base.getindex(c::Code{Ref{T}}) where {T} =
-        genlet(h -> Deref{T}(h), c)
+        genlet(h -> Index{T}(h, nothing), c)
 Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
-        genlet((h, a) -> Index{T}(h, a), c, s)
-Base.getindex(c::Atom{Ptr{T}}, s::Code{Int}) where {T} =
-        genlet(a -> Index{Ref{T}}(c, a), s)
+        genlet((a, h) -> Index{T}(h, a), s, c)
 Base.getindex(c::Code{Ref{Ptr{T}}}, s::Code{Int}) where {T} =
-        genlet((h, a) -> Index{Ref{T}}(h, a), c, s)
+        genlet((a, h) -> Index{Ref{T}}(h, a), s, c)
+Base.getindex(c::Code, s::Int) = getindex(c, cte(s))
 
 isfield(s::String) = startswith(s, "__")
+
+Base.getproperty(v::Code, s::Symbol) =
+        isfield(string(s)) ? getfield(v, s) : Base.getindex(v, s)
 
 function _propertytype(t::Type{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         local found = findall(fieldnames(NT) .== s)
@@ -356,21 +354,24 @@ function _propertytype(t::Type{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         fieldtypes(NT)[only(found)]
 end
 
-function Base.getproperty(c::Code{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
-        isfield(string(s)) && return getfield(c, s)
+function Base.getindex(c::Code{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         local T = _propertytype(Struct{Tag,NT}, s)
         genlet(h -> Index{T}(h, s), c)
 end
 
-function Base.getproperty(c::Code{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT}
-        isfield(string(s)) && return getfield(c, s)
+function Base.getindex(c::Code{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT}
         local T = _propertytype(Struct{Tag,NT}, s)
         genlet(h -> Index{Ref{T}}(h, s), c)
 end
 
+Notation.:←(c::Code{Ref{T}}, inout::Function) where {T} =
+        inout(c)
+Notation.:←(c::Code{Ptr{T}}, inout::Function, index::Code{Int}) where {T} =
+        genlet((a, h) -> inout(Index{Ref{T}}(h, a)), index, c) # N.B. reverse order
+
 Notation.:←(c::Code{Ref{T}}, v::Code{T}) where {T} =
         genlet((a, h) -> Write(h, a), v, c) # N.B. reverse order
-Notation.:←(c::Atom{Ref{T}}, v::T) where {T} = Notation.:←(c, cte(v))
+Notation.:←(c::Code{Ref{T}}, v::T) where {T} = Notation.:←(c, cte(v))
 
 const ARITY_1 = (:+, :-, :!, :~)
 

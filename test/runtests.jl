@@ -32,7 +32,7 @@ end
                 n::IR.R{Int}, p::Function)
                 IR.block() do blk
                         IR.for(n) do i
-                                if p(s[i][])
+                                if p(s[i])
                                         blk.return(i)
                                 end
                         end
@@ -47,12 +47,19 @@ end
 end
 
 @testset "pointers and references" begin
+        Vec2 = IR.struct(:vec2, :x => Int, :y => Int)
+        @proc function swapvec(v::IR.R{Ref{Vec2}})
+                r := v[].x
+                v[].x = v[].y
+                v[].y = r
+        end
+        @info C.translate(swapvec.__proc__[])
+
         @proc function memory_copy(dest::IR.R{Ptr{UInt8}}, src::IR.R{Ptr{UInt8}}, n::IR.R{Int})
                 IR.for(n) do i
-                        dest[i] = src[i][]
+                        dest[i] = src[i]
                 end
         end
-        # @info compile(find_elt)
         gcc("test_pointer", compile(memory_copy))
 end
 
@@ -60,7 +67,7 @@ end
         function alltrue(predicate, array)
                 @code IR.block() do blk
                         IR.for(array.size) do i
-                                v := array.ptr[i][]
+                                v := array.ptr[i]
                                 if predicate(v)
                                         blk.return(true)
                                 end

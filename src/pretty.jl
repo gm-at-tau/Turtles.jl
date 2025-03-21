@@ -18,7 +18,6 @@ function indent(f::Function)
         global INDENT -= 1
 end
 
-code(io::IO, c::IR.Deref) = (print(io, "("); code(io, c.__ref__); print(io, ")"))
 code(io::IO, c::IR.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
 
 function code(io::IO, c::IR.Blk)
@@ -36,7 +35,7 @@ typename(::Type{Bool}) = "bool"
 typename(::Type{Nothing}) = "void"
 typename(::Type{T}) where {T<:Integer} = lowercase(string(T, "_t"))
 typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
-typename(::Type{Ref{T}}) where {T} = typename(T)
+typename(::Type{Ref{T}}) where {T} = string(typename(T), "*")
 
 function code(io::IO, c::IR.Fn{T}) where {T}
         if c.__keyword__ isa IR.Proc
@@ -112,6 +111,7 @@ function code(io::IO, c::IR.Index)
 end
 
 function code(io::IO, c::IR.Write)
+        c.__ref__ isa IR.M || print(io, "*")
         code(io, c.__ref__)
         print(io, " = ")
         code(io, c.__val__)
@@ -124,6 +124,9 @@ function code(io::IO, b::IR.Bind)
                 if IR.type(c.__val__) == Nothing
                         code(io, c.__val__)
                 else
+			if IR.isref(c.__cell__)
+                                print(io, "&")
+                        end
                         print(io, c.__cell__)
                         print(io, " := ")
                         indent() do
@@ -154,7 +157,7 @@ code(io::IO, c::IR.M) = print(io, "m$(c.__id__)")
 code(io::IO, c::IR.R) = print(io, "r$(c.__id__)")
 
 code(::IO, ::CTE{Nothing}) = nothing
-code(io::IO, ::IR.Init{Nothing}) = print(io, "{}")
+code(::IO, ::Nothing) = nothing
 
 code(io::IO, c::CTE{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
 

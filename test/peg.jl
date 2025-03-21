@@ -95,11 +95,11 @@ end
 
 function chars_reader(anychar, env)::IR.Code{Bool}
         @code begin
-                c := env.txt[env.idx[]][]
+                c := env.txt[env.idx[]]
                 if !anychar(c)
                         false
                 else
-                        env.idx = env.idx[] + 1
+                        env.idx[] = env.idx[] + 1
                         true
                 end
         end

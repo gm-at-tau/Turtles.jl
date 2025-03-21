@@ -7,7 +7,8 @@
 
 _bind(value, tail) = _bind(Expr(:tuple), value, tail)
 function _bind(name, value, tail)
-        local continuation = :(($name) -> $(_rebind(tail)...))
+        isempty(tail) && return _code(value)
+        local continuation = Expr(:->, name, Expr(:block, _rebind(tail)...))
         Expr(:call, :(Turtles.Notation.bind), _code(value), continuation)
 end
 
@@ -35,16 +36,29 @@ function _rebind(lines::Vector{Any})
         return blk
 end
 
+_assign(refs::Vector) = Expr(:call, :(Turtles.Notation.:←), _code.(refs)...)
+_assign(ref::Any, val) = _assign(s -> _assign([s, val]), ref)
+function _assign(fn::Function, ref)
+        if Meta.isexpr(ref, :ref)
+                r = gensym("ref")
+                inout = Expr(:->, r, fn(r)) # N.B. Expression only
+                _assign(s -> _assign([s; inout; ref.args[2:end]]), ref.args[1])
+        elseif Meta.isexpr(ref, Symbol("."))
+                @assert length(ref.args) == 2
+                r = gensym("ref")
+                inout = Expr(:->, r, fn(r))
+                _assign(s -> _assign([s, inout, ref.args[2]]), ref.args[1])
+        else
+                fn(ref)
+        end
+end
+
 function _code(q::Expr)
         if Meta.isexpr(q, :block)
                 Expr(:block, _rebind(q.args)...)
         elseif Meta.isexpr(q, :(=))
                 @assert length(q.args) == 2
-                local ref, val = q.args
-                if Meta.isexpr(ref, :ref, 1)
-			ref = ref.args[1]
-                end
-		Expr(:call, :(Turtles.Notation.:←), _code(ref), _code(val))
+                _assign(q.args...)
         elseif Meta.isexpr(q, :if) || Meta.isexpr(q, :elseif)
                 _if(_code.(q.args)...)
         elseif Meta.isexpr(q, :while)

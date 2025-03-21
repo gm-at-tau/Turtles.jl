@@ -129,6 +129,9 @@ function code(io::IO, b::IR.Bind)
                 else
                         print(io, declare(c.__cell__))
                         print(io, " = ")
+                        if IR.isref(c.__cell__)
+                                print(io, "&")
+                        end
                         code(io, c.__val__)
                         print(io, "; ")
                 end
@@ -189,6 +192,19 @@ function code(io::IO, c::IR.Loop)
         code(io, blk.__blk__)
         print(io, "} $(blk.__lbl__)_c:; ")
         print(io, "} $(blk.__lbl__)_b:; ")
+end
+
+function code(io::IO, c::IR.Index)
+        if !isnothing(c.__index__)
+                print(io, c)
+        elseif c.__head__ isa IR.M
+                print(io, "(")
+                print(io, c.__head__)
+                print(io, ")")
+        else
+                print(io, "*")
+                print(io, c.__head__)
+        end
 end
 
 codegen(io::IO, c::IR.Code) = code(io, c)

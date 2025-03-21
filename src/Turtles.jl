@@ -25,6 +25,7 @@ var"if"(bool::Bool, iftrue::Function, iffalse::Function) =
                 iffalse()
         end
 
+←(ref, inout::Function, index...) = inout(getindex(ref, index...))
 ←(ref, val) = setindex!(ref, val)
 
 end
