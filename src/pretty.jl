@@ -5,7 +5,7 @@
 # Copyright (C) 2025 Gabriel Domingues <gm@mail.tau.ac.il>
 #
 
-module PrettyPrint
+module Print
 
 export Printer, pretty
 
@@ -178,5 +178,5 @@ Base.show(io::IO, c::IR.L) = print(io, "L$(c.__id__)")
 
 Base.show(io::IO, c::IR.Code) = pretty(io, PrintIR(), c)
 
-end # module PrettyPrint
+end # module Print
 
