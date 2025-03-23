@@ -27,7 +27,8 @@ struct L
         L() = new(newlabel())
 end
 
-abstract type Atom{T} <: Code{T} end
+abstract type Rho{T} <: Code{T} end
+abstract type Atom{T} <: Rho{T} end
 
 global newregister = newid()
 struct R{T} <: Atom{T}
@@ -96,15 +97,15 @@ struct Fn{T} <: Code{T}
         __args__::Vector{Atom}
 end
 
-struct Index{T} <: Code{T}
-        __head__::Atom
+struct Index{T} <: Rho{T}
+        __head__::Rho
         __index__::Union{Nothing,Symbol,Atom}
 end
 
 struct Write <: Code{Nothing}
-        __ref__::Atom{Ref{T}} where {T}
+        __ref__::Rho{Ref{T}} where {T}
         __val__::Code
-        Write(ref::Atom{Ref{T}}, val::Code{T}) where {T} = new(ref, val)
+        Write(ref::Rho{Ref{T}}, val::Code{T}) where {T} = new(ref, val)
 end
 
 function visit end
@@ -242,11 +243,11 @@ end
 
 # Extensions
 
-struct Let{F}
-        f::F
+struct Let
+        f::Function
 end
 
-var"let"(fn::F) where {F} = Let(fn)
+var"let"(fn::Function) = Let(fn)
 
 struct Init{T}
         __init__::T
@@ -290,36 +291,24 @@ end
 
 # Overload
 
+function _bind(val::Any, cell::V, f::Function)
+        local cont = Notation.apply(f, cell)
+        isnothing(cont) && return val
+        Bind(val, cell, cont)
+end
+
 function Notation.bind(c::Code{T}, f::Function) where {T}
         local cell = (Notation.arity(f) == 0) ? R{Nothing}() : R{T}()
-        local val = Notation.apply(f, cell)
-        isnothing(val) && return c
-        Bind(c, cell, val)
+        _bind(c, cell, f)
 end
 
 Notation.bind(c::CTE, f::Function) = Notation.apply(f, c.__val__)
 Notation.bind(c::Atom, f::Function) = Notation.apply(f, c)
 
-function Notation.bind(c::Index{T}, f::Function) where {T}
-        local cell = R{T}()
-        local val = Notation.apply(f, cell)
-        isnothing(val) && return c
-        Bind(c, cell, val)
-end
-
-function Notation.bind(c::Init{T}, f::Function) where {T}
-        local cell = R{T}()
-        local val = Notation.apply(f, cell)
-        isnothing(val) && return c
-        Bind(CTE{T}(c.__init__), cell, val)
-end
-
-function Notation.bind(c::Mut{T}, f::Function) where {T}
-        local cell = M{T}()
-        local val = Notation.apply(f, cell)
-        isnothing(val) && return c
-        Bind(c.__init__, cell, val)
-end
+Notation.bind(c::Init{T}, f::Function) where {T} =
+        _bind(CTE{T}(c.__init__), R{T}(), f::Function)
+Notation.bind(c::Mut{T}, f::Function) where {T} =
+        _bind(c.__init__, M{T}(), f::Function)
 
 Base.ifelse(bool::Code, iftrue, iffalse) = var"if"(bool, iftrue, iffalse)
 Base.ifelse(bool::CTE, iftrue, iffalse) = ifelse(bool.__val__, iftrue, iffalse)
@@ -337,21 +326,22 @@ function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
         fn(T, c, args...)
 end
 
-(fn::Let{F})(args::Vararg) where {F} = fn.f(args...)
-(fn::Let{F})(args::Vararg{Code}) where {F} = genlet(fn.f, args...)
+(fn::Let)(args...) = genlet(fn.f, convert.(Code, args)...)
 
-# N.B. No overloading of setproperty! and setindex! (see Meta.@lower (a[] = 1))
+Notation.addr(c::Code, s) =
+        genlet((a, h) -> Notation.addr(h, a), s, c) # N.B. opposite order
+Notation.addr(c::Rho, s::Int) = Notation.addr(c, cte(s))
+Notation.addr(c::Rho{Ptr{T}}, s::Code{Int}) where {T} =
+        genlet(a -> Index{Ref{T}}(c, a), s)
+Notation.addr(c::Rho{Ref{T}}, s) where {T} = getindex(c, s)
+Notation.addr(c::Rho{Ref{T}}) where {T} = Index{Ref{T}}(c, nothing)
 
-Notation.addr(c::Code, s::Int) = Notation.addr(c, cte(s))
-Notation.addr(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
-        genlet((a, h) -> Index{Ref{T}}(h, a), s, c)
-Notation.addr(c::Code{Ref{T}}, s) where {T} = getindex(c, s)
-
-Base.getindex(c::Code{Ref{T}}) where {T} =
-        genlet(h -> Index{T}(h, nothing), c)
-Base.getindex(c::Code, s::Int) = getindex(c, cte(s))
-Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
-        genlet((a, h) -> Index{T}(h, a), s, c)
+Base.getindex(c::Code, s...) =
+        genlet((a...) -> genlet(h -> getindex(h, a...), c), s...)
+Base.getindex(c::Rho{Ref{T}}) where {T} = Index{T}(c, nothing)
+Base.getindex(c::Rho, s::Int) = getindex(c, cte(s))
+Base.getindex(c::Rho{Ptr{T}}, s::Code{Int}) where {T} =
+        genlet(a -> Index{T}(c, a), s)
 
 Base.getproperty(v::Code, s::Symbol) =
         startswith(string(s), "__") ? getfield(v, s) : Base.getindex(v, s)
@@ -362,16 +352,13 @@ function _propertytype(t::Type{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         fieldtypes(NT)[only(found)]
 end
 
-function Base.getindex(c::Code{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
-        local T = _propertytype(Struct{Tag,NT}, s)
-        genlet(h -> Index{T}(h, s), c)
-end
+Base.getindex(c::Rho{Struct{Tag,NT}}, s::Symbol) where {Tag,NT} =
+        Index{_propertytype(Struct{Tag,NT}, s)}(c, s)
+Base.getindex(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} =
+        Index{Ref{_propertytype(Struct{Tag,NT}, s)}}(c, s)
 
-function Base.getindex(c::Code{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT}
-        local T = _propertytype(Struct{Tag,NT}, s)
-        genlet(h -> Index{Ref{T}}(h, s), c)
-end
-
+Notation.:←(c::Rho{Ref{T}}, v::Code{T}) where {T} =
+        genlet(a -> Write(c, a), v)
 Notation.:←(c::Code{Ref{T}}, v::Code{T}) where {T} =
         genlet((a, h) -> Write(h, a), v, c) # N.B. reverse order
 Notation.:←(c::Code{Ref{T}}, v::T) where {T} = Notation.:←(c, cte(v))

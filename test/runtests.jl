@@ -152,10 +152,11 @@ end
                 a[] = a[] + b
         end
 
-        @proc function testadd(x::IR.R{Int}, p::IR.R{Ref{Vec2}})
-                m := IR.mut(Vec2(x, p.y[]))
+        @proc function testadd(x::IR.R{Int}, f::IR.R{Ref{Vec2}}, t::IR.R{Ptr{Vec2}})
+                m := IR.mut(Vec2(x, f.y[]))
                 add(@addr(m.y), x)
-                add(p.x, m.y[])
+                add(f.x, m.y[])
+                t[0].x = x + t[0].y
                 m[]
         end
         @info C.translate(testadd)

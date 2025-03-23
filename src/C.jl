@@ -18,7 +18,7 @@ end
 
 (phi::Phi)(c::IR.Code) = IR.visit(c, phi)
 (phi::Phi)(c::IR.If{Nothing}) = IR.visit(c, phi)
-(phi::Phi)(c::IR.If{T}) where {T} =
+(phi::Phi)(c::IR.If) =
         phi(IR.block(function (blk)
                 # N.B. Change of type
                 iftrue = IR.If{Nothing}(c.__bool__, blk.return(c.__iftrue__), IR.cte(nothing))
@@ -62,7 +62,7 @@ end
 (fwd::Forward)(c::IR.Code) = IR.visit(c, fwd)
 (fwd::Forward)(::Symbol) = nothing
 (fwd::Forward)(c::IR.Fn) = (fwd(c.__keyword__); IR.visit(c, fwd))
-function (fwd::Forward)(c::IR.Proc{T,Ts}) where {T,Ts}
+function (fwd::Forward)(c::IR.Proc)
         local proc = get!(fwd.procs, c.__symbol__) do
                 local phi = Phi()
                 c.__proc__[] = translate(c.__proc__[], phi)
@@ -112,7 +112,7 @@ function codegen(io::IO, b::IR.Struct{Tag,NT}) where {Tag,NT}
         print(io, " };")
 end
 
-function codegen(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
+function codegen(io::IO, c::IR.Proc)
         procedure(io, c)
         print(io, " { ")
         pretty(io, PrintC_Proc(), c.__proc__[])
@@ -184,11 +184,11 @@ function Print.pretty(io::IO, pt::PrintC_Code, c::IR.Loop)
         print(io, "; } $(blk.__lbl__)_c:; } $(blk.__lbl__)_b: ")
 end
 
-Print.pretty(io::IO, ::PrintC_Code, c::IR.M{T}) where {T} =
+Print.pretty(io::IO, ::PrintC_Code, c::IR.M) =
         (print(io, "&"); print(io, c))
 Print.pretty(io::IO, ::PrintC_Code, c::IR.Index{Ref{T}}) where {T} =
         (print(io, "&"); lvalue(io, c))
-Print.pretty(io::IO, ::PrintC_Code, c::IR.Index{T}) where {T} =
+Print.pretty(io::IO, ::PrintC_Code, c::IR.Index) =
         lvalue(io, c)
 
 function lvalue(io::IO, c::IR.Index)
