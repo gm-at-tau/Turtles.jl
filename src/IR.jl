@@ -338,8 +338,11 @@ Notation.addr(c::Rho{Ref{T}}) where {T} = Index{Ref{T}}(c, nothing)
 
 Base.getindex(c::Code, s...) =
         genlet((a...) -> genlet(h -> getindex(h, a...), c), s...)
+Base.getindex(c::Rho, s...) = throw(MethodError(Base.getindex, Tuple{typeof(c),typeof.(s)...}))
 Base.getindex(c::Rho{Ref{T}}) where {T} = Index{T}(c, nothing)
 Base.getindex(c::Rho, s::Int) = getindex(c, cte(s))
+Base.getindex(c::Rho{Ref{Ptr{T}}}, s::Code{Int}) where {T} =
+        genlet(a -> Index{T}(c, a), s)
 Base.getindex(c::Rho{Ptr{T}}, s::Code{Int}) where {T} =
         genlet(a -> Index{T}(c, a), s)
 

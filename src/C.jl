@@ -61,7 +61,6 @@ end
 
 (fwd::Forward)(c::IR.Code) = IR.visit(c, fwd)
 (fwd::Forward)(::Symbol) = nothing
-(fwd::Forward)(c::IR.Fn) = (fwd(c.__keyword__); IR.visit(c, fwd))
 function (fwd::Forward)(c::IR.Proc)
         local proc = get!(fwd.procs, c.__symbol__) do
                 local phi = Phi()
@@ -72,6 +71,12 @@ function (fwd::Forward)(c::IR.Proc)
                 fwd(c)
         end
         fwd(proc.__proc__[])
+end
+(fwd::Forward)(c::IR.Fn) = (fwd(c.__keyword__); IR.visit(c, fwd))
+function (fwd::Forward)(c::IR.Fn{IR.Struct{Tag,NT}}) where {Tag,NT}
+        fwd.structs[Tag] = IR.type(c)(nothing)
+        fwd(c.__keyword__)
+        IR.visit(c, fwd)
 end
 function (fwd::Forward)(c::IR.Code{IR.Struct{Tag,NT}}) where {Tag,NT}
         fwd.structs[Tag] = IR.type(c)(nothing)
@@ -209,7 +214,6 @@ function lvalue(io::IO, c::IR.Index)
                 print(io, "]")
         end
 end
-
 
 function Print.pretty(io::IO, ::PrintC_Code, c::IR.Write)
         lvalue(io, c.__ref__)

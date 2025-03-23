@@ -157,6 +157,8 @@ end
                 add(@addr(m.y), x)
                 add(f.x, m.y[])
                 t[0].x = x + t[0].y
+                r := @addr m.y
+                r = x
                 m[]
         end
         @info C.translate(testadd)
@@ -189,11 +191,11 @@ include("peg.jl")
         integer = PEG.seq(digit, PEG.iter(PEG.alt(digit, '_')))
 
         @proc function digits(txt::IR.R{Ptr{UInt8}})
-                idx := IR.mut(0)
-                ok := PEG.reader(integer, NamedTuple([:idx => idx, :txt => txt]))
-                idx[]
+                env := IR.mut(PEG.t(txt, 0))
+                ok := PEG.reader(integer, env)
+                env.idx[]
         end
-        # @info C.compile(digits)
+        # @info C.translate(digits)
         gcc("test_peg", compile(digits))
 end
 

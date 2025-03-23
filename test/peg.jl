@@ -43,6 +43,10 @@ chars(r...) = CharSet([r...])
 char(r::Char) = chars(r)
 Base.convert(::Type{Free}, r::Char) = char(r)
 
+# Type
+
+const t = IR.struct(:peg_t, :txt => Ptr{UInt8}, :idx => Int)
+
 # Reader
 
 function reader(peg::Seq, env)::IR.Code{Bool}
