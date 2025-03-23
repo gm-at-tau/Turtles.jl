@@ -42,7 +42,6 @@ end
         @proc function find_elt(s::IR.R{Ptr{UInt8}}, n::IR.R{Int}, elt::IR.R{UInt8})
                 find(s, n, (c::IR.Code{UInt8}) -> c == elt)
         end
-        @info C.translate(find_elt.__proc__[])
         gcc("test_generic", compile(find_elt))
 end
 
@@ -60,7 +59,6 @@ end
                         dest[i] = src[i]
                 end
         end
-        @info C.translate(memory_copy.__proc__[])
         gcc("test_pointer", compile(memory_copy))
 end
 
@@ -149,17 +147,19 @@ end
 end
 
 @testset "ref passing" begin
+        Vec2 = IR.struct(:vec2, :x => Int, :y => Int)
         @proc function add(a::IR.R{Ref{Int}}, b::IR.R{Int})
                 a[] = a[] + b
         end
 
-        @proc function add2(x::IR.R{Int})
-                m := IR.mut(x)
-                add(@addr(m), x)
+        @proc function testadd(x::IR.R{Int}, p::IR.R{Ref{Vec2}})
+                m := IR.mut(Vec2(x, p.y[]))
+                add(@addr(m.y), x)
+                add(p.x, m.y[])
                 m[]
         end
-        @info compile(add2)
-        gcc("test_double", compile(add2))
+        @info C.translate(testadd)
+        gcc("test_ref", compile(testadd))
 end
 
 @testset "defer" begin

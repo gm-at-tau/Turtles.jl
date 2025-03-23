@@ -140,8 +140,8 @@ isref(::V) = false
 const TYPES = (Int32, Int64, UInt8, Bool, Nothing, Ptr{UInt8})
 
 struct Struct{Tag,NT<:NamedTuple}
-        Struct{Tag,NT}(::Nothing) where {Tag,NT} = new{Tag,NT}()
-        function Struct{Tag,NT}(args...) where {Tag,NT}
+        Struct{Tag,NT}(::Nothing) where {Tag,NT<:NamedTuple} = new{Tag,NT}()
+        function Struct{Tag,NT}(args...) where {Tag,NT<:NamedTuple}
                 local inits = convert.(Code, args)
                 @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
                 fn(Struct{Tag,NT}, :init, inits...)
@@ -153,10 +153,10 @@ function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
         return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}
 end
 
-Base.pairs(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} = NT::NamedTuple
+Base.pairs(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} = NT
 Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} =
-        fieldnames(NT::NamedTuple)
-Base.zero(t::Type{Struct{Tag,NT}}) where {Tag,NT} =
+        fieldnames(NT)
+Base.zero(t::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} =
         t(zip(fieldnames(NT), zero.(fieldtypes(NT)))...)
 
 # Constructors

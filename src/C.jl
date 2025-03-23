@@ -120,6 +120,8 @@ function codegen(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
 end
 
 PrettyPrint.pretty(io::IO, ::PrintC, c::IR.R) = print(io, c)
+PrettyPrint.pretty(io::IO, ::PrintC_LValue, c::IR.R) = print(io, c)
+PrettyPrint.pretty(io::IO, ::PrintC_LValue, c::IR.R{Ref{T}}) where {T} = print(io, "(*$c)")
 PrettyPrint.pretty(io::IO, ::PrintC_LValue, c::IR.M) = print(io, c)
 
 _pretty(io::IO, pt, b::IR.Bind) =
@@ -149,7 +151,7 @@ PrettyPrint.pretty(io::IO, ::PrintC_Proc, c::IR.Loop) = pretty(io, PrintC_RValue
 PrettyPrint.pretty(io::IO, ::PrintC_Proc, c::IR.If) = pretty(io, PrintC_RValue(), c)
 
 PrettyPrint.pretty(io::IO, ::PrintC_Proc, c::IR.Code{Nothing}) =
-	pretty(io, PrintC_RValue(), c)
+        pretty(io, PrintC_RValue(), c)
 PrettyPrint.pretty(io::IO, ::PrintC_Proc, c::IR.Code) =
         (print(io, "return "); pretty(io, PrintC_RValue(), c))
 
@@ -190,32 +192,28 @@ PrettyPrint.pretty(io::IO, ::PrintC_RValue, c::IR.M{T}) where {T} =
         (print(io, "&"); pretty(io, PrintC_LValue(), c))
 PrettyPrint.pretty(io::IO, ::PrintC_RValue, c::IR.Index{Ref{T}}) where {T} =
         (print(io, "&"); pretty(io, PrintC_LValue(), c))
+PrettyPrint.pretty(io::IO, ::PrintC_RValue, c::IR.Index{T}) where {T} =
+        pretty(io, PrintC_LValue(), c)
 
-_pretty(io::IO, pt, c::IR.Index) =
-        if !isnothing(c.__index__)
-                if c.__index__ isa Symbol
-                        print(io, c.__head__)
-                        print(io, ".$(c.__index__)")
-                elseif c.__head__ isa IR.M
-                        @assert isnothing(c.__index__)
-                        print(io, "(")
-                        print(io, c.__head__)
-                        print(io, ")")
-                else
-                        pretty(io, pt, c.__head__)
-                        print(io, "[")
-                        pretty(io, pt, c.__index__)
-                        print(io, "]")
-                end
-        elseif c.__head__ isa IR.M
-                print(io, c.__head__)
-        else
-                print(io, "*")
+function PrettyPrint.pretty(io::IO, pt::PrintC_LValue, c::IR.Index)
+        if c.__index__ isa Symbol
                 pretty(io, pt, c.__head__)
+                print(io, ".$(c.__index__)")
+        elseif c.__head__ isa IR.M
+                @assert isnothing(c.__index__)
+                print(io, "(")
+                print(io, c.__head__)
+                print(io, ")")
+        elseif isnothing(c.__index__)
+                pretty(io, PrintC_LValue(), c.__head__)
+        else
+                pretty(io, pt, c.__head__)
+                print(io, "[")
+                pretty(io, PrintC_RValue(), c.__index__)
+                print(io, "]")
         end
+end
 
-PrettyPrint.pretty(io::IO, pt::PrintC_RValue, c::IR.Index) = _pretty(io, pt, c)
-PrettyPrint.pretty(io::IO, pt::PrintC_LValue, c::IR.Index) = _pretty(io, pt, c)
 
 function PrettyPrint.pretty(io::IO, pt::PrintC, c::IR.Write)
         if c.__ref__ isa IR.M || c.__ref__ isa IR.Index
@@ -228,7 +226,7 @@ function PrettyPrint.pretty(io::IO, pt::PrintC, c::IR.Write)
         pretty(io, pt, c.__val__)
 end
 
-codegen(io::IO, c::IR.Code) = pretty(io, PrintC(), c)
+codegen(io::IO, c::IR.Code) = pretty(io, PrintC_RValue(), c)
 codegen(c::IR.Code) = (io = IOBuffer(); codegen(io, c); String(take!(io)))
 
 end
