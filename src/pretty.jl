@@ -7,7 +7,14 @@
 
 module PrettyPrint
 
+export Printer, pretty
+
 using ..IR
+
+abstract type Printer end
+struct PrintIR <: Printer end
+
+function pretty end
 
 INDENT = 0
 
@@ -18,13 +25,11 @@ function indent(f::Function)
         global INDENT -= 1
 end
 
-code(io::IO, c::IR.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
-
-function code(io::IO, c::IR.Blk)
+function pretty(io::IO, pt::PrintIR, c::IR.Blk)
         print(io, "$(c.__lbl__):{")
         indent() do
                 newline(io)
-                code(io, c.__blk__)
+                pretty(io, pt, c.__blk__)
         end
         newline(io)
         print(io, "}")
@@ -37,13 +42,13 @@ typename(::Type{T}) where {T<:Integer} = lowercase(string(T, "_t"))
 typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
 typename(::Type{Ref{T}}) where {T} = string(typename(T), "*")
 
-function code(io::IO, c::IR.Fn{T}) where {T}
+function pretty(io::IO, pt::Printer, c::IR.Fn{T}) where {T}
         if c.__keyword__ isa IR.Proc
                 print(io, c.__keyword__.__symbol__)
                 print(io, "(")
                 for (i, c) = enumerate(c.__args__)
                         (i > 1) && print(io, ", ")
-                        code(io, c)
+                        pretty(io, pt, c)
                 end
                 print(io, ")")
         elseif c.__keyword__ == :init
@@ -53,35 +58,35 @@ function code(io::IO, c::IR.Fn{T}) where {T}
                 end
                 for (a, k) = zip(c.__args__, fieldnames(T))
                         isnothing(k) || print(io, ".$k = ")
-                        code(io, a)
+                        pretty(io, pt, a)
                         print(io, ", ")
                 end
                 print(io, " }")
         elseif length(c.__args__) == 1
                 print(io, c.__keyword__)
-                code(io, c.__args__[1])
+                pretty(io, pt, c.__args__[1])
         elseif length(c.__args__) == 2
-                code(io, c.__args__[1])
+                pretty(io, pt, c.__args__[1])
                 print(io, " $(c.__keyword__) ")
-                code(io, c.__args__[2])
+                pretty(io, pt, c.__args__[2])
         else
                 throw(ArgumentError("Cannot show $(c.__keyword__)"))
         end
 end
 
-function code(io::IO, c::IR.Ret)
+function pretty(io::IO, pt::PrintIR, c::IR.Ret)
         print(io, "return:$(c.__lbl__) (")
-        code(io, c.__val__)
+        pretty(io, pt, c.__val__)
         print(io, ")")
 end
 
-function code(io::IO, c::IR.If)
+function pretty(io::IO, pt::PrintIR, c::IR.If)
         print(io, "if (")
-        code(io, c.__bool__)
+        pretty(io, pt, c.__bool__)
         print(io, ") {")
         indent() do
                 newline(io)
-                code(io, c.__iftrue__)
+                pretty(io, pt, c.__iftrue__)
         end
         newline(io)
         print(io, "}")
@@ -89,19 +94,19 @@ function code(io::IO, c::IR.If)
                 print(io, " else { ")
                 indent() do
                         newline(io)
-                        code(io, c.__iffalse__)
+                        pretty(io, pt, c.__iffalse__)
                 end
                 newline(io)
                 print(io, "}")
         end
 end
 
-function code(io::IO, c::IR.Loop)
+function pretty(io::IO, pt::PrintIR, c::IR.Loop)
         print(io, "loop ")
-        code(io, c.__blk__)
+        pretty(io, pt, c.__blk__)
 end
 
-function code(io::IO, c::IR.Index)
+function pretty(io::IO, pt::Printer, c::IR.Index)
         if c.__index__ isa Symbol
                 print(io, c.__head__)
                 print(io, ".$(c.__index__)")
@@ -111,67 +116,67 @@ function code(io::IO, c::IR.Index)
                 print(io, c.__head__)
                 print(io, ")")
         else
-                code(io, c.__head__)
+                pretty(io, pt, c.__head__)
                 print(io, "[")
-                code(io, c.__index__)
+                pretty(io, pt, c.__index__)
                 print(io, "]")
         end
 end
 
-function code(io::IO, c::IR.Write)
-        code(io, c.__ref__)
+function pretty(io::IO, pt::Printer, c::IR.Write)
+        pretty(io, pt, c.__ref__)
         print(io, " = ")
-        code(io, c.__val__)
+        pretty(io, pt, c.__val__)
 end
 
-function code(io::IO, b::IR.Bind)
+function pretty(io::IO, pt::PrintIR, b::IR.Bind)
         local c = b
         while c isa IR.Bind
                 if IR.type(c.__val__) == Nothing
-                        code(io, c.__val__)
+                        pretty(io, pt, c.__val__)
                         print(io, "; ")
                 else
                         if c.__cell__ isa R{Ref{T}} where {T}
                                 print(io, "&")
                         end
-                        code(io, c.__cell__)
+                        pretty(io, pt, c.__cell__)
                         print(io, " := ")
                         indent() do
-                                code(io, c.__val__)
+                                pretty(io, pt, c.__val__)
                         end
                         print(io, "; ")
                 end
                 newline(io)
                 c = c.__cont__
         end
-        code(io, c)
+        pretty(io, pt, c)
 end
 
-function code(io::IO, c::IR.Proc)
+function pretty(io::IO, pt::PrintIR, c::IR.Proc)
         print(io, "fn (")
         join(io, c.__cells__, ", ")
         print(io, ") ")
-        code(io, c.__proc__[])
+        pretty(io, pt, c.__proc__[])
 end
 
 for ty = IR.TYPES
         ty in (Ptr{UInt8}, Nothing) && continue
-        @eval code(io::IO, c::CTE{$ty}) = print(io, c.__val__)
+        @eval pretty(io::IO, ::Printer, c::IR.CTE{$ty}) = print(io, c.__val__)
 end
 
-code(io::IO, c::IR.M) = (print(io, "&"); print(io, c))
-code(io::IO, c::IR.R) = print(io, c)
+pretty(::IO, ::Printer, ::IR.CTE{Nothing}) = nothing
+pretty(::IO, ::Printer, ::Nothing) = nothing
+pretty(io::IO, ::Printer, c::IR.CTE{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
 
-code(::IO, ::CTE{Nothing}) = nothing
-code(::IO, ::Nothing) = nothing
-
-code(io::IO, c::CTE{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
+pretty(io::IO, ::PrintIR, c::IR.BreakContinue) = print(io, c.__break__ ? "break" : "continue")
+pretty(io::IO, ::PrintIR, c::IR.M) = (print(io, "&"); print(io, c))
+pretty(io::IO, ::PrintIR, c::IR.R) = print(io, c)
 
 Base.show(io::IO, c::IR.M) = print(io, "m$(c.__id__)")
 Base.show(io::IO, c::IR.R) = print(io, "r$(c.__id__)")
 Base.show(io::IO, c::IR.L) = print(io, "L$(c.__id__)")
 
-Base.show(io::IO, c::IR.Code) = code(io, c)
+Base.show(io::IO, c::IR.Code) = pretty(io, PrintIR(), c)
 
 end # module PrettyPrint
 

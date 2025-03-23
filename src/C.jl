@@ -86,6 +86,11 @@ compile(c::IR.Proc) =
 
 ## Show
 
+abstract type PrintC <: Printer end
+struct PrintC_Proc end # N.B. No inheritance
+struct PrintC_RValue <: PrintC end
+struct PrintC_LValue <: PrintC end
+
 declare(c::IR.R{T}) where {T} = "$(PrettyPrint.typename(T)) const $c"
 declare(c::IR.M{T}) where {T} = "$(PrettyPrint.typename(T)) $c"
 declare(::Type{T}, c::Symbol) where {T} = "$(PrettyPrint.typename(T)) $c"
@@ -95,8 +100,6 @@ function procedure(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
         join(io, declare.(c.__cells__), ", ")
         print(io, ")")
 end
-
-code(io::IO, c::IR.Code) = print(io, c)
 
 function codegen(io::IO, b::IR.Struct{Tag,NT}) where {Tag,NT}
         print(io, "struct $(Tag) { ")
@@ -111,115 +114,121 @@ function codegen(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
         procedure(io, c)
         print(io, " { ")
         blk = c.__proc__[]
-        if blk isa IR.Bind
-                code(io, blk)
-        else
-                print(io, "return ")
-                code(io, blk)
-                print(io, "; ")
-        end
-        print(io, " } ")
+        pt = (IR.type(blk) isa Nothing) ? PrintC_RValue() : PrintC_Proc()
+        pretty(io, pt, blk)
+        print(io, "; } ")
 end
 
-function code(io::IO, b::IR.Bind)
-        local c = b
-        while c isa IR.Bind
-                if IR.type(c.__val__) == Nothing
-                        code(io, c.__val__)
-                        print(io, "; ")
-                else
-                        print(io, declare(c.__cell__))
-                        print(io, " = ")
-                        if c.__cell__ isa R{Ref{T}} where {T}
-                                print(io, "&")
+PrettyPrint.pretty(io::IO, ::PrintC, c::IR.R) = print(io, c)
+PrettyPrint.pretty(io::IO, ::PrintC_LValue, c::IR.M) = print(io, c)
+
+_pretty(io::IO, pt, b::IR.Bind) =
+        let c = b
+                while c isa IR.Bind
+                        if IR.type(c.__val__) != Nothing
+                                print(io, declare(c.__cell__))
+                                print(io, " = ")
                         end
-                        code(io, c.__val__)
+                        pretty(io, PrintC_RValue(), c.__val__)
                         print(io, "; ")
+                        c = c.__cont__
                 end
-                c = c.__cont__
+                pretty(io, pt, c)
         end
-        if IR.type(c) == Nothing
-                code(io, c)
-        elseif IR.type(c) == IR.BreakContinue
-                print(io, c)
-        else
-                print(io, "return ")
-                code(io, c)
-        end
-        print(io, "; ")
-end
 
-function code(io::IO, c::IR.Blk)
-        print(io, "{ ")
-        code(io, c.__blk__)
-        print(io, "} $(c.__lbl__):; ")
-end
+PrettyPrint.pretty(io::IO, pt::PrintC_RValue, b::IR.Bind) = _pretty(io, pt, b)
+PrettyPrint.pretty(io::IO, pt::PrintC_Proc, b::IR.Bind) = _pretty(io, pt, b)
 
-function code(io::IO, c::IR.Ret)
-        if c.__val__ isa IR.R
-                @assert c.__lbl__.__id__ == 0x0 "`return` outside of function"
-                print(io, "return ")
-                print(io, c.__val__)
-        elseif c.__val__ isa IR.BreakContinue
-                if c.__val__.__break__
-                        print(io, "goto $(c.__lbl__)_b")
-                else
-                        print(io, "goto $(c.__lbl__)_c")
-                end
+_pretty(io, pt, c::IR.Blk) =
+        (print(io, "{ "); pretty(io, pt, c.__blk__); print(io, "; } $(c.__lbl__): "))
+
+PrettyPrint.pretty(io::IO, pt::PrintC_RValue, c::IR.Blk) = _pretty(io, pt, c)
+PrettyPrint.pretty(io::IO, pt::PrintC_Proc, c::IR.Blk) = _pretty(io, pt, c)
+
+PrettyPrint.pretty(io::IO, ::PrintC_Proc, c::IR.Loop) = pretty(io, PrintC_RValue(), c)
+PrettyPrint.pretty(io::IO, ::PrintC_Proc, c::IR.If) = pretty(io, PrintC_RValue(), c)
+
+PrettyPrint.pretty(io::IO, ::PrintC_Proc, c::IR.Code{Nothing}) =
+	pretty(io, PrintC_RValue(), c)
+PrettyPrint.pretty(io::IO, ::PrintC_Proc, c::IR.Code) =
+        (print(io, "return "); pretty(io, PrintC_RValue(), c))
+
+function PrettyPrint.pretty(io::IO, ::PrintC, c::IR.Ret)
+        if c.__val__ isa IR.BreakContinue
+                local lbl = c.__val__.__break__ ? 'b' : 'c'
+                print(io, "goto $(c.__lbl__)_$lbl")
         else
+                @assert c.__val__ isa CTE{Nothing}
                 print(io, "goto $(c.__lbl__)")
         end
 end
 
-function code(io::IO, c::IR.If)
+function PrettyPrint.pretty(io::IO, pt::PrintC, c::IR.If)
         print(io, "if (")
-        code(io, c.__bool__)
+        pretty(io, pt, c.__bool__)
         print(io, ") { ")
-        code(io, c.__iftrue__)
-        print(io, "; ")
-        print(io, " } ")
+        pretty(io, pt, c.__iftrue__)
+        print(io, "; } ")
         if !(c.__iffalse__ isa CTE{Nothing})
                 print(io, " else { ")
-                code(io, c.__iffalse__)
-                print(io, "; ")
-                print(io, " } ")
+                pretty(io, pt, c.__iffalse__)
+                print(io, "; } ")
         end
 end
 
-function code(io::IO, c::IR.Loop)
+PrettyPrint.pretty(::IO, ::PrintC_RValue, c::IR.BreakContinue) = nothing
+
+function PrettyPrint.pretty(io::IO, pt::PrintC, c::IR.Loop)
         blk = c.__blk__
         print(io, "for (;;) ")
         print(io, "{ { ")
-        code(io, blk.__blk__)
-        print(io, "} $(blk.__lbl__)_c:; ")
-        print(io, "} $(blk.__lbl__)_b:; ")
+        pretty(io, pt, blk.__blk__)
+        print(io, "; } $(blk.__lbl__)_c:; } $(blk.__lbl__)_b: ")
 end
 
-function code(io::IO, c::IR.Index)
+PrettyPrint.pretty(io::IO, ::PrintC_RValue, c::IR.M{T}) where {T} =
+        (print(io, "&"); pretty(io, PrintC_LValue(), c))
+PrettyPrint.pretty(io::IO, ::PrintC_RValue, c::IR.Index{Ref{T}}) where {T} =
+        (print(io, "&"); pretty(io, PrintC_LValue(), c))
+
+_pretty(io::IO, pt, c::IR.Index) =
         if !isnothing(c.__index__)
-                print(io, c)
+                if c.__index__ isa Symbol
+                        print(io, c.__head__)
+                        print(io, ".$(c.__index__)")
+                elseif c.__head__ isa IR.M
+                        @assert isnothing(c.__index__)
+                        print(io, "(")
+                        print(io, c.__head__)
+                        print(io, ")")
+                else
+                        pretty(io, pt, c.__head__)
+                        print(io, "[")
+                        pretty(io, pt, c.__index__)
+                        print(io, "]")
+                end
         elseif c.__head__ isa IR.M
-                print(io, "(")
                 print(io, c.__head__)
-                print(io, ")")
         else
                 print(io, "*")
-                print(io, c.__head__)
+                pretty(io, pt, c.__head__)
         end
-end
 
-function code(io::IO, c::IR.Write)
+PrettyPrint.pretty(io::IO, pt::PrintC_RValue, c::IR.Index) = _pretty(io, pt, c)
+PrettyPrint.pretty(io::IO, pt::PrintC_LValue, c::IR.Index) = _pretty(io, pt, c)
+
+function PrettyPrint.pretty(io::IO, pt::PrintC, c::IR.Write)
         if c.__ref__ isa IR.M || c.__ref__ isa IR.Index
                 print(io, c.__ref__)
         else
                 print(io, "*")
-                code(io, c.__ref__)
+                pretty(io, pt, c.__ref__)
         end
         print(io, " = ")
-        code(io, c.__val__)
+        pretty(io, pt, c.__val__)
 end
 
-codegen(io::IO, c::IR.Code) = code(io, c)
+codegen(io::IO, c::IR.Code) = pretty(io, PrintC(), c)
 codegen(c::IR.Code) = (io = IOBuffer(); codegen(io, c); String(take!(io)))
 
 end

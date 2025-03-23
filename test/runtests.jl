@@ -13,7 +13,7 @@ function gcc(filename::String, code::String)
         # [TODO] Compile with Clang_jll
         CC = `gcc -O2 -std=c99 -Wall -Wextra -Wno-unused-variable -Wno-unused-label`
         run(`$CC -c $filename.c -o $filename.o`)
-        # run(`rm $filename.c $filename.o`)
+        run(`rm $filename.c $filename.o`)
 end
 
 @testset "syntax" begin
