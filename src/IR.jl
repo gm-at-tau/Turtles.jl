@@ -240,11 +240,6 @@ function genlet(f::Function, args::Vararg{Code})
         return recur()
 end
 
-addr(m::M{T}) where {T} =
-        let r = R{Ref{T}}()
-                Bind(m, r, r)
-        end
-
 # Extensions
 
 struct Let{F}
@@ -305,6 +300,13 @@ end
 Notation.bind(c::CTE, f::Function) = Notation.apply(f, c.__val__)
 Notation.bind(c::Atom, f::Function) = Notation.apply(f, c)
 
+function Notation.bind(c::Index{T}, f::Function) where {T}
+        local cell = R{T}()
+        local val = Notation.apply(f, cell)
+        isnothing(val) && return c
+        Bind(c, cell, val)
+end
+
 function Notation.bind(c::Init{T}, f::Function) where {T}
         local cell = R{T}()
         local val = Notation.apply(f, cell)
@@ -340,18 +342,19 @@ end
 
 # N.B. No overloading of setproperty! and setindex! (see Meta.@lower (a[] = 1))
 
+Notation.addr(c::Code, s::Int) = Notation.addr(c, cte(s))
+Notation.addr(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
+        genlet((a, h) -> Index{Ref{T}}(h, a), s, c)
+Notation.addr(c::Code{Ref{T}}, s) where {T} = getindex(c, s)
+
 Base.getindex(c::Code{Ref{T}}) where {T} =
         genlet(h -> Index{T}(h, nothing), c)
+Base.getindex(c::Code, s::Int) = getindex(c, cte(s))
 Base.getindex(c::Code{Ptr{T}}, s::Code{Int}) where {T} =
         genlet((a, h) -> Index{T}(h, a), s, c)
-Base.getindex(c::Code{Ref{Ptr{T}}}, s::Code{Int}) where {T} =
-        genlet((a, h) -> Index{Ref{T}}(h, a), s, c)
-Base.getindex(c::Code, s::Int) = getindex(c, cte(s))
-
-isfield(s::String) = startswith(s, "__")
 
 Base.getproperty(v::Code, s::Symbol) =
-        isfield(string(s)) ? getfield(v, s) : Base.getindex(v, s)
+        startswith(string(s), "__") ? getfield(v, s) : Base.getindex(v, s)
 
 function _propertytype(t::Type{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         local found = findall(fieldnames(NT) .== s)
@@ -368,11 +371,6 @@ function Base.getindex(c::Code{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT}
         local T = _propertytype(Struct{Tag,NT}, s)
         genlet(h -> Index{Ref{T}}(h, s), c)
 end
-
-Notation.:←(c::Code{Ref{T}}, inout::Function) where {T} =
-        inout(c)
-Notation.:←(c::Code{Ptr{T}}, inout::Function, index::Code{Int}) where {T} =
-        genlet((a, h) -> inout(Index{Ref{T}}(h, a)), index, c) # N.B. reverse order
 
 Notation.:←(c::Code{Ref{T}}, v::Code{T}) where {T} =
         genlet((a, h) -> Write(h, a), v, c) # N.B. reverse order

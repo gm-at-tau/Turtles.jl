@@ -130,7 +130,7 @@ function code(io::IO, b::IR.Bind)
                 else
                         print(io, declare(c.__cell__))
                         print(io, " = ")
-                        if IR.isref(c.__cell__)
+                        if c.__cell__ isa R{Ref{T}} where {T}
                                 print(io, "&")
                         end
                         code(io, c.__val__)
@@ -142,12 +142,11 @@ function code(io::IO, b::IR.Bind)
                 code(io, c)
         elseif IR.type(c) == IR.BreakContinue
                 print(io, c)
-                print(io, "; ")
         else
                 print(io, "return ")
                 code(io, c)
-                print(io, "; ")
         end
+        print(io, "; ")
 end
 
 function code(io::IO, c::IR.Blk)
@@ -161,15 +160,14 @@ function code(io::IO, c::IR.Ret)
                 @assert c.__lbl__.__id__ == 0x0 "`return` outside of function"
                 print(io, "return ")
                 print(io, c.__val__)
-                print(io, "; ")
         elseif c.__val__ isa IR.BreakContinue
                 if c.__val__.__break__
-                        print(io, "goto $(c.__lbl__)_b; ")
+                        print(io, "goto $(c.__lbl__)_b")
                 else
-                        print(io, "goto $(c.__lbl__)_c; ")
+                        print(io, "goto $(c.__lbl__)_c")
                 end
         else
-                print(io, "goto $(c.__lbl__); ")
+                print(io, "goto $(c.__lbl__)")
         end
 end
 
@@ -178,10 +176,12 @@ function code(io::IO, c::IR.If)
         code(io, c.__bool__)
         print(io, ") { ")
         code(io, c.__iftrue__)
+        print(io, "; ")
         print(io, " } ")
         if !(c.__iffalse__ isa CTE{Nothing})
                 print(io, " else { ")
                 code(io, c.__iffalse__)
+                print(io, "; ")
                 print(io, " } ")
         end
 end
@@ -206,6 +206,17 @@ function code(io::IO, c::IR.Index)
                 print(io, "*")
                 print(io, c.__head__)
         end
+end
+
+function code(io::IO, c::IR.Write)
+        if c.__ref__ isa IR.M || c.__ref__ isa IR.Index
+                print(io, c.__ref__)
+        else
+                print(io, "*")
+                code(io, c.__ref__)
+        end
+        print(io, " = ")
+        code(io, c.__val__)
 end
 
 codegen(io::IO, c::IR.Code) = code(io, c)

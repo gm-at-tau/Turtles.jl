@@ -36,21 +36,24 @@ function _rebind(lines::Vector{Any})
         return blk
 end
 
-_assign(refs::Vector) = Expr(:call, :(Turtles.Notation.:←), _code.(refs)...)
-_assign(ref::Any, val) = _assign(s -> _assign([s, val]), ref)
-function _assign(fn::Function, ref)
-        if Meta.isexpr(ref, :ref)
-                r = gensym("ref")
-                inout = Expr(:->, r, fn(r)) # N.B. Expression only
-                _assign(s -> _assign([s; inout; ref.args[2:end]]), ref.args[1])
-        elseif Meta.isexpr(ref, Symbol("."))
-                @assert length(ref.args) == 2
-                r = gensym("ref")
-                inout = Expr(:->, r, fn(r))
-                _assign(s -> _assign([s, inout, ref.args[2]]), ref.args[1])
+function _addr(ref::Expr)
+        if Meta.isexpr(ref, :ref, 1)
+                _addr(ref.args[1])
+        elseif Meta.isexpr(ref, :ref)
+                Expr(:call, :(Turtles.Notation.addr), _addr(ref.args[1]),
+                        _code.(ref.args[2:end])...)
+        elseif Meta.isexpr(ref, :.)
+                Expr(:call, :(Turtles.Notation.addr), _addr(ref.args[1]),
+                        _code.(ref.args[2:end])...)
         else
-                fn(ref)
+                _code(ref)
         end
+end
+_addr(ref) = _code(ref)
+
+macro addr(q)
+        r = _addr(q)
+        return esc(r)
 end
 
 function _code(q::Expr)
@@ -58,7 +61,7 @@ function _code(q::Expr)
                 Expr(:block, _rebind(q.args)...)
         elseif Meta.isexpr(q, :(=))
                 @assert length(q.args) == 2
-                _assign(q.args...)
+                Expr(:call, :(Turtles.Notation.:←), _addr(q.args[1]), _code(q.args[2]))
         elseif Meta.isexpr(q, :if) || Meta.isexpr(q, :elseif)
                 _if(_code.(q.args)...)
         elseif Meta.isexpr(q, :while)

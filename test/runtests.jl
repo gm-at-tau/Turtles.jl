@@ -13,7 +13,7 @@ function gcc(filename::String, code::String)
         # [TODO] Compile with Clang_jll
         CC = `gcc -O2 -std=c99 -Wall -Wextra -Wno-unused-variable -Wno-unused-label`
         run(`$CC -c $filename.c -o $filename.o`)
-        run(`rm $filename.c $filename.o`)
+        # run(`rm $filename.c $filename.o`)
 end
 
 @testset "syntax" begin
@@ -42,16 +42,16 @@ end
         @proc function find_elt(s::IR.R{Ptr{UInt8}}, n::IR.R{Int}, elt::IR.R{UInt8})
                 find(s, n, (c::IR.Code{UInt8}) -> c == elt)
         end
-        # @info compile(find_elt)
+        @info C.translate(find_elt.__proc__[])
         gcc("test_generic", compile(find_elt))
 end
 
 @testset "pointers and references" begin
         Vec2 = IR.struct(:vec2, :x => Int, :y => Int)
         @proc function swapvec(v::IR.R{Ref{Vec2}})
-                r := v[].x
-                v[].x = v[].y
-                v[].y = r
+                r := v.x[]
+                v.x[] = v.y[]
+                v.y[] = r
         end
         @info C.translate(swapvec.__proc__[])
 
@@ -60,6 +60,7 @@ end
                         dest[i] = src[i]
                 end
         end
+        @info C.translate(memory_copy.__proc__[])
         gcc("test_pointer", compile(memory_copy))
 end
 
@@ -154,7 +155,7 @@ end
 
         @proc function add2(x::IR.R{Int})
                 m := IR.mut(x)
-                add(IR.addr(m), x)
+                add(@addr(m), x)
                 m[]
         end
         @info compile(add2)

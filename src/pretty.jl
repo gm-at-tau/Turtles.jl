@@ -41,7 +41,10 @@ function code(io::IO, c::IR.Fn{T}) where {T}
         if c.__keyword__ isa IR.Proc
                 print(io, c.__keyword__.__symbol__)
                 print(io, "(")
-                join(io, c.__args__, ", ")
+                for (i, c) = enumerate(c.__args__)
+                        (i > 1) && print(io, ", ")
+                        code(io, c)
+                end
                 print(io, ")")
         elseif c.__keyword__ == :init
                 print(io, "($(typename(T))){ ")
@@ -69,7 +72,7 @@ end
 function code(io::IO, c::IR.Ret)
         print(io, "return:$(c.__lbl__) (")
         code(io, c.__val__)
-        print(io, "); ")
+        print(io, ")")
 end
 
 function code(io::IO, c::IR.If)
@@ -100,8 +103,13 @@ end
 
 function code(io::IO, c::IR.Index)
         if c.__index__ isa Symbol
-                code(io, c.__head__)
+                print(io, c.__head__)
                 print(io, ".$(c.__index__)")
+        elseif c.__head__ isa IR.M
+                @assert isnothing(c.__index__)
+                print(io, "(")
+                print(io, c.__head__)
+                print(io, ")")
         else
                 code(io, c.__head__)
                 print(io, "[")
@@ -111,11 +119,9 @@ function code(io::IO, c::IR.Index)
 end
 
 function code(io::IO, c::IR.Write)
-        c.__ref__ isa IR.M || print(io, "*")
         code(io, c.__ref__)
         print(io, " = ")
         code(io, c.__val__)
-        print(io, "; ")
 end
 
 function code(io::IO, b::IR.Bind)
@@ -125,10 +131,10 @@ function code(io::IO, b::IR.Bind)
                         code(io, c.__val__)
                         print(io, "; ")
                 else
-			if IR.isref(c.__cell__)
+                        if c.__cell__ isa R{Ref{T}} where {T}
                                 print(io, "&")
                         end
-                        print(io, c.__cell__)
+                        code(io, c.__cell__)
                         print(io, " := ")
                         indent() do
                                 code(io, c.__val__)
@@ -148,22 +154,24 @@ function code(io::IO, c::IR.Proc)
         code(io, c.__proc__[])
 end
 
-
 for ty = IR.TYPES
         ty in (Ptr{UInt8}, Nothing) && continue
         @eval code(io::IO, c::CTE{$ty}) = print(io, c.__val__)
 end
 
-code(io::IO, c::IR.M) = print(io, "m$(c.__id__)")
-code(io::IO, c::IR.R) = print(io, "r$(c.__id__)")
+code(io::IO, c::IR.M) = (print(io, "&"); print(io, c))
+code(io::IO, c::IR.R) = print(io, c)
 
 code(::IO, ::CTE{Nothing}) = nothing
 code(::IO, ::Nothing) = nothing
 
 code(io::IO, c::CTE{Ptr{UInt8}}) = print(io, repr(unsafe_string(c.__val__)))
 
-Base.show(io::IO, c::IR.Code) = code(io, c)
+Base.show(io::IO, c::IR.M) = print(io, "m$(c.__id__)")
+Base.show(io::IO, c::IR.R) = print(io, "r$(c.__id__)")
 Base.show(io::IO, c::IR.L) = print(io, "L$(c.__id__)")
+
+Base.show(io::IO, c::IR.Code) = code(io, c)
 
 end # module PrettyPrint
 

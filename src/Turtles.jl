@@ -25,7 +25,7 @@ var"if"(bool::Bool, iftrue::Function, iffalse::Function) =
                 iffalse()
         end
 
-←(ref, inout::Function, index...) = inout(getindex(ref, index...))
+addr(ref, index...) = getindex(ref, index...)
 ←(ref, val) = setindex!(ref, val)
 
 end
@@ -55,6 +55,6 @@ function compile(c::IR.Proc)
         String(take!(io))
 end
 
-export @code, @proc, IR, C, compile
+export @code, @proc, @addr, IR, C, compile
 
 end # module Turtles
