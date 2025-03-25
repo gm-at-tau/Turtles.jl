@@ -28,11 +28,10 @@ end
 end
 
 @testset "generic" begin
-        @code function find(s::IR.R{Ptr{UInt8}},
-                n::IR.R{Int}, p::Function)
+        @code function find(n::IR.R{Int}, p::Function)
                 IR.block() do blk
                         IR.for(n) do i
-                                if p(s[i])
+                                if p(i)
                                         blk.return(i)
                                 end
                         end
@@ -40,7 +39,7 @@ end
                 end
         end
         @proc function find_elt(s::IR.R{Ptr{UInt8}}, n::IR.R{Int}, elt::IR.R{UInt8})
-                find(s, n, (c::IR.Code{UInt8}) -> c == elt)
+                find(n, (i::IR.Atom{Int64}) -> s[i] == elt)
         end
         gcc("test_generic", compile(find_elt))
 end

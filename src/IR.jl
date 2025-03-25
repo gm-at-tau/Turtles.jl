@@ -111,17 +111,13 @@ end
 function visit end
 
 visit(t::C, ::Function) where {C<:Atom} = t
+visit(t::Fn{T}, ::Function) where {T} = t
+visit(t::Index{T}, ::Function) where {T} = t
+visit(t::Write, ::Function) = t
 
-visit(t::If{T}, f::Function) where {T} =
-        If{T}(f(t.__bool__), f(t.__iftrue__), f(t.__iffalse__))
 visit(t::Loop, f::Function) = Loop(f(t.__blk__))
-visit(t::Fn{T}, f::Function) where {T} =
-        Fn{T}(t.__keyword__, f.(t.__args__))
-visit(t::Index{T}, f::Function) where {T} =
-        Index{T}(f(t.__head__), (t.__index__ isa Code) ? f(t.__index__) : t.__index__)
-visit(t::Write, f::Function) =
-        Write(f(t.__ref__), f(t.__val__))
-
+visit(t::If{T}, f::Function) where {T} =
+        If{T}(t.__bool__, f(t.__iftrue__), f(t.__iffalse__))
 visit(t::Bind{T}, f::Function) where {T} =
         Bind(f(t.__val__), t.__cell__, f(t.__cont__))
 visit(t::Blk{T}, f::Function) where {T} =

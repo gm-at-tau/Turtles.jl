@@ -44,12 +44,13 @@ end
         end
 
 flat(c::IR.Code) = IR.visit(c, flat)
-flat(c::IR.Bind) =
-        hoist(flat(c.__val__), (v) -> IR.Bind(v, c.__cell__, flat(c.__cont__)))
+flat(c::IR.Bind) = hoist(flat(c.__val__), c.__cell__, flat(c.__cont__))
 
-hoist(c::IR.Code, f::Function) = f(c)
-hoist(c::IR.Bind, f::Function) =
-        flat(IR.Bind(c.__val__, c.__cell__, hoist(c.__cont__, f)))
+hoist(c::IR.Code, v::IR.V, cont) = IR.Bind(c, v, cont)
+hoist(c::IR.Bind, v::IR.V, cont) =
+        let h = hoist(c.__cont__, v, cont)
+                IR.Bind(c.__val__, c.__cell__, h)
+        end
 
 translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(c))
 
@@ -72,11 +73,10 @@ function (fwd::Forward)(c::IR.Proc)
         end
         fwd(proc.__proc__[])
 end
-(fwd::Forward)(c::IR.Fn) = (fwd(c.__keyword__); IR.visit(c, fwd))
+(fwd::Forward)(c::IR.Fn) = (fwd(c.__keyword__); c)
 function (fwd::Forward)(c::IR.Fn{IR.Struct{Tag,NT}}) where {Tag,NT}
         fwd.structs[Tag] = IR.type(c)(nothing)
-        fwd(c.__keyword__)
-        IR.visit(c, fwd)
+        (fwd(c.__keyword__); c)
 end
 function (fwd::Forward)(c::IR.Code{IR.Struct{Tag,NT}}) where {Tag,NT}
         fwd.structs[Tag] = IR.type(c)(nothing)
