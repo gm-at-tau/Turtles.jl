@@ -60,27 +60,26 @@ struct Forward <: Function
         Forward() = new(Dict(), Dict())
 end
 
-(fwd::Forward)(c::IR.Code) = IR.visit(c, fwd)
+(fwd::Forward)(c::IR.Code) = (IR.visit(c, fwd); nothing)
 (fwd::Forward)(::Symbol) = nothing
 function (fwd::Forward)(c::IR.Proc)
-        local proc = get!(fwd.procs, c.__symbol__) do
+        get!(fwd.procs, c.__symbol__) do
                 local phi = Phi()
+                fwd(c.__proc__[])
                 c.__proc__[] = translate(c.__proc__[], phi)
                 return c
         end
-        for c = proc.__cells__
-                fwd(c)
-        end
-        fwd(proc.__proc__[])
+        nothing
 end
-(fwd::Forward)(c::IR.Fn) = (fwd(c.__keyword__); c)
+(fwd::Forward)(c::IR.Fn) = fwd(c.__keyword__)
 function (fwd::Forward)(c::IR.Fn{IR.Struct{Tag,NT}}) where {Tag,NT}
         fwd.structs[Tag] = IR.type(c)(nothing)
-        (fwd(c.__keyword__); c)
+        fwd(c.__keyword__)
 end
 function (fwd::Forward)(c::IR.Code{IR.Struct{Tag,NT}}) where {Tag,NT}
         fwd.structs[Tag] = IR.type(c)(nothing)
         IR.visit(c, fwd)
+        nothing
 end
 
 compile(c::IR.Proc) =

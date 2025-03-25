@@ -94,10 +94,11 @@ end
 macro proc(ret, q)
         ty = IR.type(eval(ret))
         name, sig, blk = _proc(q)
-        cell = IR.R{ty}()
+        placeholder = IR.Fn{ty}(Symbol("#"), [])
         r = quote
-                $name = $(IR.proc)($(QuoteNode(name)), $(Expr(:function, sig, Expr(:block, cell))))
-                $name.__proc__[] = ($(Expr(:function, sig, blk)))($name.__cells__...)
+                $name = $(IR.proc)($(QuoteNode(name)),
+                        $(Expr(:function, sig, Expr(:block, placeholder))))
+                $name[] = $(Expr(:function, sig, blk))
         end
         return esc(r)
 end

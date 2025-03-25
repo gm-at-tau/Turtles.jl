@@ -73,8 +73,11 @@ struct Proc{T,Ts<:Tuple} <: Atom{Function}
         __cells__::Ts
         __proc__::Ref{Code{T}}
         Proc(s, cells::Ts, r::Code{T}) where {T,Ts} =
-                new{T,Ts}(s, cells, Ref{Code{T}}(r))
+                new{T,Ts}(s, cells, Ref{Code{T}}(assert_closed(r, cells)))
 end
+Base.setindex!(proc::Proc, f::Function) =
+        (proc.__proc__[] = assert_closed(f(proc.__cells__...), proc.__cells__))
+Base.getindex(proc::Proc) = proc.__proc__[]
 
 struct If{T} <: Code{T}
         __bool__::Atom{Bool}
@@ -110,20 +113,39 @@ end
 
 function visit end
 
-visit(t::C, ::Function) where {C<:Atom} = t
-visit(t::Fn{T}, ::Function) where {T} = t
-visit(t::Index{T}, ::Function) where {T} = t
-visit(t::Write, ::Function) = t
+visit(t::C, f::Function) where {C<:Atom} = t
+visit(t::Fn{T}, f::Function) where {T} = t
+visit(t::Index{T}, f::Function) where {T} = t
+visit(t::Write, f::Function) = t
 
-visit(t::Loop, f::Function) = Loop(f(t.__blk__))
-visit(t::If{T}, f::Function) where {T} =
-        If{T}(t.__bool__, f(t.__iftrue__), f(t.__iffalse__))
-visit(t::Bind{T}, f::Function) where {T} =
-        Bind(f(t.__val__), t.__cell__, f(t.__cont__))
-visit(t::Blk{T}, f::Function) where {T} =
-        Blk{T}(t.__lbl__, f(t.__blk__))
-visit(t::Ret{T}, f::Function) where {T} =
-        Ret{T}(t.__lbl__, f(t.__val__))
+function visit(t::Loop, f::Function)
+        blk = f(t.__blk__)
+        isnothing(blk) && return t
+        Loop(blk)
+end
+function visit(t::If, f::Function)
+        bool = f(t.__bool__)
+        ift = f(t.__iftrue__)
+        iff = f(t.__iffalse__)
+        isnothing(bool) && isnothing(ift) && isnothing(iff) && return t
+        If(bool, ift, iff)
+end
+function visit(t::Bind, f::Function)
+        val = f(t.__val__)
+        cont = f(t.__cont__)
+        isnothing(val) && isnothing(cont) && return t
+        Bind(val, t.__cell__, cont)
+end
+function visit(t::Blk, f::Function)
+        blk = f(t.__blk__)
+        isnothing(blk) && return t
+        Blk(t.__lbl__, blk)
+end
+function visit(t::Ret, f::Function)
+        val = f(t.__val__)
+        isnothing(val) && return t
+        Ret(t.__lbl__, val)
+end
 
 # Types
 
@@ -407,5 +429,23 @@ Base.:&(lhs::CTE{Bool}, rhs::CTE{Bool}) = CTE{Bool}(lhs.__val__ & rhs.__val__)
 Base.:⊻(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, !lhs, lhs)
 Base.:⊻(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, !rhs, rhs)
 Base.:⊻(lhs::CTE{Bool}, rhs::CTE{Bool}) = CTE{Bool}(lhs.__val__ ⊻ rhs.__val__)
+
+# Free Variables
+
+struct FreeVars <: Function
+        vars::Set{Union{L,V}}
+end
+
+(vs::FreeVars)(c::IR.Code) = (IR.visit(c, vs); nothing)
+(vs::FreeVars)(c::IR.Blk) = (push!(vs.vars, c.__lbl__); IR.visit(c, vs); delete!(vs.vars, c.__lbl__); nothing)
+(vs::FreeVars)(c::IR.Bind) = (push!(vs.vars, c.__cell__); IR.visit(c, vs); delete!(vs.vars, c.__cell__); nothing)
+(vs::FreeVars)(c::IR.V) = (@assert (c in vs.vars) "$c is a free variable"; nothing)
+(vs::FreeVars)(c::IR.Ret) = (@assert (c.__lbl__ in vs.vars) "$(c.__lbl__) is a free label"; nothing)
+
+function assert_closed(r, cells)
+        local free = FreeVars(Set(cells))
+        free(r)
+        return r
+end
 
 end # module IR
