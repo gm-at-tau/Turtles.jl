@@ -391,10 +391,8 @@ var"if"(bool::Code{Bool}, iftrue::Code) =
 
 Creates a `FnCall` expression in ANF.
 """
-fncall(::Type{T}, keyword, args::Vararg{Code}) where {T} =
-        genlet((a...) -> FnCall{T}(keyword, collect(a)), args...)
 fncall(::Type{T}, keyword, args::Vararg) where {T} =
-        fncall(T, keyword, convert.(Code, args)...)
+	genlet(a -> FnCall{T}(keyword, a), collect(Code, args))
 
 @doc """
 	proc(name, f)
@@ -414,37 +412,34 @@ end
 
 Converts the function call to ANF, i.e., performs let-insertion.
 """
-function genlet(f::Function, args::Vararg{Code})
-        local tail = reverse!(collect(Code, args))
+genlet(f::Function, a::Code) = Notation.bind(a, r -> f(convert(Code, r)))
+genlet(f::Function, a1::Code, a2::Code) =
+	Notation.bind(a1, r1 ->
+		Notation.bind(a2, r2 ->
+		       f(convert(Code, r1), convert(Code, r2))))
+genlet(f::Function, args::Vararg{Code}) =
+	genlet((a) -> f(a...), collect(Code, args))
+function genlet(f::Function, args::Vector{Code})
+        local tail = reverse(args)
         local head = Code[]
         sizehint!(head, length(tail))
         function recur()
                 if isempty(tail)
                         @assert length(head) == length(args) "$(args => head)"
-                        return f(head...)
+			return f(head)
                 end
-                local a = pop!(tail)
-                if a isa Atom
-                        push!(head, a)
-                        recur() # tailcall
-                elseif a isa Bind
-                        push!(tail, a.__cont__)
-                        local val = recur()
-                        Bind(a.__val__, a.__cell__, val)
-                else
-                        Notation.bind(a, function (b)
-                                push!(head, b)
-                                recur()
-                        end)
-                end
+		Notation.bind(pop!(tail), function (b)
+			push!(head, b)
+			recur()
+		end)
         end
         return recur()
 end
 
 # Extensions
 
-struct Let
-        f::Function
+struct Let{F<:Function}
+        f::F
 end
 
 @doc """
@@ -452,7 +447,7 @@ end
 
 Converts the function to ANF when called.
 """
-var"let"(fn::Function) = Let(fn)
+var"let"(fn) = Let(fn)
 
 struct Init{T}
         __init__::T
@@ -551,7 +546,7 @@ function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
         fncall(T, c, args...)
 end
 
-(fn::Let)(args...) = genlet(fn.f, convert.(Code, args)...)
+(fn::Let)(args...) = genlet((a) -> fn.f(a...), collect(Code, args))
 
 Notation.addr(c::Code, s) =
         genlet((a, h) -> Notation.addr(h, a), s, c) # N.B. opposite order
@@ -562,7 +557,7 @@ Notation.addr(c::Rho{Ref{T}}, s) where {T} = getindex(c, s)
 Notation.addr(c::Rho{Ref{T}}) where {T} = Index{Ref{T}}(c, nothing)
 
 Base.getindex(c::Code, s...) =
-        genlet((a...) -> genlet(h -> getindex(h, a...), c), s...)
+	genlet(a -> genlet(h -> getindex(h, a...), c), collect(Code, s))
 Base.getindex(c::Rho, s...) = throw(MethodError(Base.getindex, Tuple{typeof(c),typeof.(s)...}))
 Base.getindex(c::Rho{Ref{T}}) where {T} = Index{T}(c, nothing)
 Base.getindex(c::Rho, s::Int) = getindex(c, cte(s))
@@ -601,7 +596,7 @@ for e = ARITY_1
         end
 end
 
-const ARITY_2 = (:+, :-, :*, :/, :%, :|, :&, :⊻, :<, :(==), :(<=))
+const ARITY_2 = (:+, :-, :*, :/, :%, :|, :&, :⊻, :<<, :>>, :(<), :(==), :(<=))
 
 for e = ARITY_2
         if e in (:(<), :(==), :(<=))
