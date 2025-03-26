@@ -12,33 +12,82 @@ export Atom, R, CTE
 using ..Turtles
 using ..Notation
 
+public Code, RHS, Rho, L, V, M, BreakContinue, Break, Continue
+public Bind, Blk, Ret, Proc, If, Loop, FnCall, Index, Write, Struct
+public visit, type, struct, block, loop, if, fncall, proc, genlet
+public let, init, mut, while, for
+
+@doc """
+	newid()
+
+Returns a function that increments a local counter every time it is called.
+"""
 function newid()
         COUNTER = 0
         () -> UInt16(COUNTER += 1)
 end
+global newlabel = newid()
+global newregister = newid()
+global newmutable = newid()
 
 # Language (IR)
 
+@doc """
+	Code{T}
+
+Abstract type that represents a chunk of IR code that yields a value of type `T`.
+"""
 abstract type Code{T} end
 
-global newlabel = newid()
+@doc """
+	L
+
+A scoped label representation. Note this is not a code structure.
+"""
 struct L
         __id__::UInt16
         L() = new(newlabel())
 end
 
+@doc """
+	RHS{T}
+
+Abstract type that is a `Code{T}` without inner stateful blocks.
+"""
 abstract type RHS{T} <: Code{T} end
+
+@doc """
+	Rho{T}
+
+Abstract type that is a `RHS{T}` that is a atomic or indexed expression.
+"""
 abstract type Rho{T} <: RHS{T} end
+
+@doc """
+	Atom{T}
+
+Abstract type that is an atomic (i.e., indivisible) expression.
+"""
 abstract type Atom{T} <: Rho{T} end
 
-global newregister = newid()
+@doc """
+	R{T} <: Atom{T}
+
+A register of type `T`. This is a local immutable variable.
+We deduplicate `R{Nothing}()` to a unique fixed id.
+
+"""
 struct R{T} <: Atom{T}
         __id__::UInt16
         R{T}() where {T} = new{T}(newregister())
         R{Nothing}() = new(0x0)
 end
 
-global newmutable = newid()
+@doc """
+	M{T} <: Atom{Ref{T}}
+
+A mutable variable to value of type `T`. This is a stack-allocated reference.
+"""
 struct M{T} <: Atom{Ref{T}}
         __id__::UInt16
         M{T}() where {T} = new{T}(newmutable())
@@ -46,10 +95,20 @@ end
 
 const V{T} = Union{R{T},M{T}}
 
+@doc """
+	CTE{T} <: Atom{T}
+
+A compile-time constant expression of type `T`.
+"""
 struct CTE{T} <: Atom{T}
         __val__::T
 end
 
+@doc """
+	Bind{T} <: Code{T}
+
+A node for variable binding. This is the fundament unit of program sequencing and named definition.
+"""
 struct Bind{T} <: Code{T}
         __val__::Code
         __cell__::V
@@ -59,16 +118,33 @@ struct Bind{T} <: Code{T}
         Bind(val::Code{S}, cell::V{S}, c) where {S} = Bind(val, cell, cte(c))
 end
 
+@doc """
+	Blk{T} <: Code{T}
+
+A block of code that allows for early return control flow using a return label.
+"""
 struct Blk{T} <: Code{T}
         __lbl__::L
         __blk__::Code{T}
 end
 
+@doc """
+	Ret{T} <: RHS{Nothing}
+
+A return expression of type `T` the enclosing block with corresponding label.
+This is usually accessed via `blk.return` or `blk.break`.
+"""
 struct Ret{T} <: RHS{Nothing}
         __lbl__::L
         __val__::Atom{T}
 end
 
+@doc """
+	Proc{T, Ts}
+
+A procedure that returns a value of type `T` with arguments of types `Ts`, where `Ts` is a tuple of register types.
+The constructor guarantees the code block is lexically closed.
+"""
 struct Proc{T,Ts<:Tuple}
         __symbol__::Symbol
         __cells__::Ts
@@ -80,38 +156,75 @@ Base.setindex!(proc::Proc, f::Function) =
         (proc.__proc__[] = assert_closed(f(proc.__cells__...), proc.__cells__))
 Base.getindex(proc::Proc) = proc.__proc__[]
 
+@doc """
+	If{T} <: Code{T}
+
+An `if` expression.
+"""
 struct If{T} <: Code{T}
         __bool__::Atom{Bool}
         __iftrue__::Code{T}
         __iffalse__::Code{T}
 end
 
+@doc """
+	BreakContinue <: Atom{BreakContinue}
+
+A compile-time atom for a boolean the describe `break` and `continue` for loops.
+The constants `Break` and `Continue` are inserted into the `blk` of `loop`.
+"""
 struct BreakContinue <: Atom{BreakContinue}
         __break__::Bool
 end
 const Break = BreakContinue(true)
 const Continue = BreakContinue(false)
 
+@doc """
+	Loop <: Code{Nothing}
+
+A `loop` expression.
+"""
 struct Loop <: Code{Nothing}
         __blk__::Blk{BreakContinue}
 end
 
+@doc """
+	FnCall{T} <: RHS{T}
+
+An expression for function call, this included builtin operators and procedures.
+"""
 struct FnCall{T} <: RHS{T}
         __keyword__::Union{Symbol,Proc}
         __args__::Vector{Atom}
 end
 
+@doc """
+	Index{T} <: Rho{T}
+
+An expression for indexing, both in rvalue and lvalue mode.
+"""
 struct Index{T} <: Rho{T}
         __head__::Rho
         __index__::Union{Nothing,Symbol,Atom}
 end
 
+@doc """
+	Write <: RHS{Nothing}
+
+An assignment expression.
+"""
 struct Write <: RHS{Nothing}
         __ref__::Rho{Ref{T}} where {T}
         __val__::Code
         Write(ref::Rho{Ref{T}}, val::Code{T}) where {T} = new(ref, val)
 end
 
+@doc """
+	visit(code, f)
+
+Visiting the `code` tree structure.
+If `f` returns `nothing`, then `visit` returns nothing, otherwise, `visit` constructs the same type of node.
+"""
 function visit end
 
 visit(t::Atom, ::Function) = t
@@ -172,15 +285,26 @@ end
 
 # Types
 
+@doc """
+	type(code)
+
+Gives the underlying return type of a code expression or code type.
+"""
 type(::Type{<:Code{T}}) where {T} = T
 type(::C) where {T,C<:Code{T}} = T
 
-isref(::R{Ref{T}}) where {T} = true
-isref(::V{Ptr{T}}) where {T} = false
-isref(::V) = false
+@doc """
+	TYPES
 
+Basic C types that match with Julia types.
+"""
 const TYPES = (Int32, Int64, UInt8, Bool, Nothing, Ptr{UInt8})
 
+@doc """
+	Struct{Tag, NT}
+
+A type-level marker for a tagged structure in C.
+"""
 struct Struct{Tag,NT<:NamedTuple}
         Struct{Tag,NT}(::Nothing) where {Tag,NT<:NamedTuple} = new{Tag,NT}()
         function Struct{Tag,NT}(args...) where {Tag,NT<:NamedTuple}
@@ -190,6 +314,11 @@ struct Struct{Tag,NT<:NamedTuple}
         end
 end
 
+@doc """
+	struct(tag, fields...)
+
+Creates a new structure type with `tag` and `fields` names and types.
+"""
 function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
         local t = NamedTuple(fields)
         return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}
@@ -207,6 +336,11 @@ for ty = TYPES
         @eval cte(t::$ty) = CTE{$ty}(t)
 end
 
+@doc """
+	block(f)
+
+Creates a `Blk` that calls `f(blk)` that can early return with a value by calling `blk.return(val)`.
+"""
 function block(f::Function)
         local lbl = L()
         local rettype = Ref{Union{Type,Nothing}}(nothing)
@@ -227,6 +361,11 @@ function block(f::Function)
         return Blk{rettype[]}(lbl, val)
 end
 
+@doc """
+	loop(f)
+
+Creates a `Loop` that calls `f(blk)` that can break/continue by calling `blk.break` and `blk.continue`.
+"""
 function loop(f::Function)
         local lbl = L()
         local blk = (; var"break"=Ret(lbl, Break), var"continue"=Ret(lbl, Continue))
@@ -237,16 +376,31 @@ function loop(f::Function)
         Loop(Blk{BreakContinue}(lbl, val))
 end
 
+@doc """
+	if(bool, iftrue [, iffalse])
+
+Creates a `If` expression in ANF.
+"""
 var"if"(bool::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
         genlet(b -> If{T}(b, iftrue, iffalse), bool)
 var"if"(bool::Code{Bool}, iftrue::Code) =
         var"if"(bool, iftrue, CTE{Nothing}(nothing))
 
+@doc """
+	fncall(type, keyword, args...)
+
+Creates a `FnCall` expression in ANF.
+"""
 fncall(::Type{T}, keyword, args::Vararg{Code}) where {T} =
         genlet((a...) -> FnCall{T}(keyword, collect(a)), args...)
 fncall(::Type{T}, keyword, args::Vararg) where {T} =
         fncall(T, keyword, convert.(Code, args)...)
 
+@doc """
+	proc(name, f)
+
+Creates a `Proc` named `name` from a Julia function with input registers.
+"""
 function proc(s::Symbol, f::Function)
         local sig = tuple(only(methods(f)).sig.types...)
         local types = type.(sig[2:end])
@@ -255,6 +409,11 @@ function proc(s::Symbol, f::Function)
         Proc(s, cells, val)
 end
 
+@doc """
+	genlet(f, args...)
+
+Converts the function call to ANF, i.e., performs let-insertion.
+"""
 function genlet(f::Function, args::Vararg{Code})
         local tail = reverse!(collect(Code, args))
         local head = Code[]
@@ -288,18 +447,33 @@ struct Let
         f::Function
 end
 
+@doc """
+	let(f)
+
+Converts the function to ANF when called.
+"""
 var"let"(fn::Function) = Let(fn)
 
 struct Init{T}
         __init__::T
 end
 
+@doc """
+	init(t)
+
+Initializes a register with the constant `t` when called with `Notation.bind`.
+"""
 init(t::String) = Init{Ptr{UInt8}}(pointer(t))
 
 struct Mut{T}
         __init__::Code{T}
 end
 
+@doc """
+	mut(t)
+
+Initializes a mutable variable with the constant `t` when called with `Notation.bind`.
+"""
 mut(t::Code{T}) where {T} = Mut{T}(t)
 
 for ty = TYPES
@@ -307,6 +481,11 @@ for ty = TYPES
         @eval mut(t::$ty) = Mut{$ty}(t)
 end
 
+@doc """
+	while(body, condition)
+
+Creates a C-style while-loop.
+"""
 var"while"(v::Function, c::Code{Bool}) = var"while"(c, v)
 var"while"(c::Code{Bool}, v::Function) =
         loop(blk -> Notation.if(c, () -> Notation.apply(v, blk), () -> blk.break))
@@ -318,6 +497,11 @@ _forloop(f, c) = Notation.bind(mut(0), i ->
                                 Notation.apply(f, r, blk)))
         end)
 
+@doc """
+	for(body, iter)
+
+Creates a C-style for-loop with iterable `iter`.
+"""
 var"for"(f::Function, c::Code{Int}) = _forloop(f, c)
 var"for"(f::Function, c::Init{Int}) = _forloop(f, c.__init__)
 

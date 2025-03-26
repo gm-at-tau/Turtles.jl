@@ -51,6 +51,11 @@ function _addr(ref::Expr)
 end
 _addr(ref) = _code(ref)
 
+@doc """
+	@addr
+
+Interprets indexing sequence as lvalue instead of rvalue.
+"""
 macro addr(q)
         r = _addr(q)
         return esc(r)
@@ -77,6 +82,11 @@ function _code(q::Expr)
 end
 _code(q) = q
 
+@doc """
+	@code
+
+Transform Julia code into fully overloadable syntax.
+"""
 macro code(q)
         r = _code(q)
         return esc(r)
@@ -91,6 +101,12 @@ function _proc(q)
         return name, sig, blk
 end
 
+@doc """
+	@proc [ret] function name() end
+
+Transforms function into `@code` block that calls `IR.proc`.
+If the function is recursive, the return type `ret` must be provided
+"""
 macro proc(ret, q)
         ty = IR.type(eval(ret))
         name, sig, blk = _proc(q)

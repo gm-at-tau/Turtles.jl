@@ -11,6 +11,8 @@ using ..IR
 using ..Notation
 using ..Print
 
+public translate, compile, procedure, codegen
+
 struct Phi <: Function
         labels::Dict{IR.L,IR.V}
         Phi() = new(Dict{IR.L,IR.V}())
@@ -57,6 +59,11 @@ hoist(c::IR.Bind, v::IR.V, cont) =
         end
 hoist(c::Any) = c
 
+@doc """
+	translate(code)
+
+Translate the procedure from the IR into a subset of C99.
+"""
 translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(c))
 
 struct Forward <: Function
@@ -89,6 +96,11 @@ function (fwd::Forward)(c::IR.RHS{IR.Struct{Tag,NT}}) where {Tag,NT}
 end
 (fwd::Forward)(::Any) = nothing
 
+@doc """
+	compile(proc)
+
+Returns all used functions and structs for forward declaration.
+"""
 compile(c::IR.Proc) =
         let fwd = Forward()
                 fwd(c)
@@ -108,12 +120,22 @@ declare(c::IR.R{T}) where {T} = "$(Print.typename(T)) const $c"
 declare(c::IR.M{T}) where {T} = "$(Print.typename(T)) $c"
 declare(::Type{T}, c::Symbol) where {T} = "$(Print.typename(T)) $c"
 
+@doc """
+	procedure(io, proc)
+
+Writes a procedure declaration in C.
+"""
 function procedure(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
         print(io, "$(declare(T, c.__symbol__))(")
         join(io, declare.(c.__cells__), ", ")
         print(io, ")")
 end
 
+@doc """
+	codegen(io, proc_or_struct)
+
+Writes the definiton of procedure or struct in C.
+"""
 function codegen(io::IO, b::IR.Struct{Tag,NT}) where {Tag,NT}
         print(io, "struct $(Tag) { ")
         for (f, t) = zip(fieldnames(NT), fieldtypes(NT))

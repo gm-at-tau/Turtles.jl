@@ -36,6 +36,11 @@ include("control.jl")
 include("pretty.jl")
 include("C.jl")
 
+@doc """
+	compile(proc)
+
+Compiles a procedure into the corresponding C program as text.
+"""
 function compile(c::IR.Proc)
         io = IOBuffer()
         print(io, "#include <stdbool.h>\n#include <stdint.h>\n")
