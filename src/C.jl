@@ -72,10 +72,19 @@ struct Forward <: Function
         Forward() = new(Dict(), Dict())
 end
 
-(fwd::Forward)(c::IR.Code) = (IR.visit(c, fwd); nothing)
-(fwd::Forward)(::IR.RHS) = nothing
+(fwd::Forward)(::Type{Ptr{IR.Struct{Tag,NT}}}) where {Tag,NT} =
+        (fwd.structs[Tag] = IR.Struct{Tag,NT}(nothing); nothing)
+(fwd::Forward)(::Type{Ref{IR.Struct{Tag,NT}}}) where {Tag,NT} =
+        (fwd.structs[Tag] = IR.Struct{Tag,NT}(nothing); nothing)
+(fwd::Forward)(::Type{IR.Struct{Tag,NT}}) where {Tag,NT} =
+        (fwd.structs[Tag] = IR.Struct{Tag,NT}(nothing); nothing)
+(fwd::Forward)(::Type) = nothing
+
+(fwd::Forward)(c::IR.Code) = (fwd(IR.type(c)); IR.visit(c, fwd); nothing)
+(fwd::Forward)(c::IR.RHS) = fwd(IR.type(c))
 (fwd::Forward)(::Symbol) = nothing
 function (fwd::Forward)(c::IR.Proc)
+        fwd.(IR.type.(c.__cells__))
         get!(fwd.procs, c.__symbol__) do
                 local phi = Phi()
                 fwd(c.__proc__[])
@@ -84,28 +93,16 @@ function (fwd::Forward)(c::IR.Proc)
         end
         nothing
 end
-(fwd::Forward)(c::IR.FnCall) = fwd(c.__keyword__)
-function (fwd::Forward)(c::IR.FnCall{IR.Struct{Tag,NT}}) where {Tag,NT}
-        fwd.structs[Tag] = IR.type(c)(nothing)
-        fwd(c.__keyword__)
-end
-function (fwd::Forward)(c::IR.RHS{IR.Struct{Tag,NT}}) where {Tag,NT}
-        fwd.structs[Tag] = IR.type(c)(nothing)
-        IR.visit(c, fwd)
-        nothing
-end
+(fwd::Forward)(c::IR.FnCall) =
+        (fwd(c.__keyword__); fwd(IR.type(c)); IR.visit(c, fwd); nothing)
 (fwd::Forward)(::Any) = nothing
 
 @doc """
-	compile(proc)
+	compile(proc [, fwd])
 
 Returns all used functions and structs for forward declaration.
 """
-compile(c::IR.Proc) =
-        let fwd = Forward()
-                fwd(c)
-                return fwd
-        end
+compile(c::IR.Proc, fwd=Forward()) = (fwd(c); fwd)
 
 ## Show
 
@@ -127,7 +124,11 @@ Writes a procedure declaration in C.
 """
 function procedure(io::IO, c::IR.Proc{T,Ts}) where {T,Ts}
         print(io, "$(declare(T, c.__symbol__))(")
-        join(io, declare.(c.__cells__), ", ")
+        if isempty(c.__cells__)
+                print(io, "void")
+        else
+                join(io, declare.(c.__cells__), ", ")
+        end
         print(io, ")")
 end
 

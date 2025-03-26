@@ -41,10 +41,14 @@ include("C.jl")
 
 Compiles a procedure into the corresponding C program as text.
 """
-function compile(c::IR.Proc)
+function compile(procs::Vararg{IR.Proc})
         io = IOBuffer()
-        print(io, "#include <stdbool.h>\n#include <stdint.h>\n")
-        fwd::C.Forward = C.compile(c)
+        print(io, "#include <stdbool.h>\n#include <stdint.h>\n\n")
+
+        fwd = C.Forward()
+        for proc = procs
+                C.compile(proc, fwd)
+        end
         for (k, v) = fwd.structs
                 C.codegen(io, v)
                 print(io, '\n')

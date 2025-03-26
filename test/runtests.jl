@@ -8,11 +8,11 @@
 using Turtles
 using Test
 
-function gcc(filename::String, code::String)
-        write("$filename.c", code)
-        # [TODO] Compile with Clang_jll
-        CC = `gcc -O2 -std=c99 -Wall -Wextra -Wno-unused-variable -Wno-unused-label`
-        run(`$CC -c $filename.c -o $filename.o`)
+function cc(filename::String, procs...)
+        code = @time "compile procedures" compile(procs...)
+        @time "write to file" write("$filename.c", code)
+        CC = `cc -O2 -std=c99 -Wall -Wextra -Wno-unused-variable -Wno-unused-label`
+        @time "C compiler" run(`$CC -c $filename.c -o $filename.o`)
         run(`rm $filename.c $filename.o`)
 end
 
@@ -41,7 +41,7 @@ end
         @proc function find_elt(s::IR.R{Ptr{UInt8}}, n::IR.R{Int}, elt::IR.R{UInt8})
                 find(n, (i::IR.Atom{Int64}) -> s[i] == elt)
         end
-        gcc("test_generic", compile(find_elt))
+        cc("test_generic", find_elt)
 end
 
 @testset "pointers and references" begin
@@ -51,14 +51,13 @@ end
                 v.x[] = v.y[]
                 v.y[] = r
         end
-        @info C.translate(swapvec[])
 
         @proc function memory_copy(dest::IR.R{Ptr{UInt8}}, src::IR.R{Ptr{UInt8}}, n::IR.R{Int})
                 IR.for(n) do i
                         dest[i] = src[i]
                 end
         end
-        gcc("test_pointer", compile(memory_copy))
+        cc("test_pointer", memory_copy, swapvec)
 end
 
 @testset "struct" begin
@@ -88,14 +87,13 @@ end
                 if alldigit(m[])
                         m.size[] = m.size[] + 1
                 end
-                # m[]
+                m[]
         end
-        # @info compile(alldigit)
-        gcc("test_struct", compile(arbitrary))
+        cc("test_struct", arbitrary)
 end
 
 @testset "unrolling" begin
-        @code function pow(x::IR.Code{Int}, n::IR.Code{Int})
+        @code function exp_int(x::IR.Code{Int}, n::IR.Code{Int})
                 p := IR.mut(1)
                 IR.for(n) do
                         p[] = p[] * x
@@ -103,8 +101,9 @@ end
                 p[]
         end
 
-        @info IR.proc(:pow, pow)
-        @info IR.proc(:pow, (x::IR.R{Int}) -> pow(promote(x, 5)...))
+        exp_int_loop = IR.proc(:exp_int, exp_int)
+        exp_int_unroll = IR.proc(:exp_int5, (x::IR.R{Int}) -> exp_int(promote(x, 5)...))
+        cc("test_unroll", exp_int_loop, exp_int_unroll)
 end
 
 @testset "gibonacci" begin
@@ -119,18 +118,18 @@ end
                 x[]
         end
 
-        @info IR.proc(:fibonacci, (n::IR.R{Int}) -> gibonacci(promote(0, 1, n)...))
+        fibonacci = IR.proc(:fibonacci, (n::IR.R{Int}) -> gibonacci(promote(0, 1, n)...))
         @proc IR.Code{Int} function gib5(x::IR.R{Int}, y::IR.R{Int})
                 gibonacci(promote(x, y, 5)...)
         end
-        gcc("test_gibonacci", compile(gib5))
 
         # N.B. Recursive function cannot have top-level [@code]
         function recur_gibonacci(x::IR.Code{Int}, y::IR.Code{Int}, n::IR.Code{Int})
                 @code ((n == 0) ? x : IR.let(recur_gibonacci)(y, x + y, n - 1))
         end
-        @info IR.proc(:recur_gib5, (x::IR.R{Int}, y::IR.R{Int}) ->
+        recur_gib5 = IR.proc(:recur_gib5, (x::IR.R{Int}, y::IR.R{Int}) ->
                 recur_gibonacci(promote(x, y, 5)...))
+        cc("test_gibonacci", fibonacci, gib5, recur_gib5)
 end
 
 @testset "max3" begin
@@ -141,8 +140,7 @@ end
         @proc function maxsum(x::IR.R{Int}, y::IR.R{Int})
                 max3(x, y, x + y)
         end
-        # @info C.compile(max3)
-        gcc("test_max3", compile(maxsum))
+        cc("test_max3", maxsum)
 end
 
 @testset "ref passing" begin
@@ -160,16 +158,14 @@ end
                 r = x
                 m[]
         end
-        @info C.translate(testadd[])
-        gcc("test_ref", compile(testadd))
+        cc("test_ref", testadd)
 end
 
 @testset "defer" begin
         c = @code IR.block() do blk
                 i := IR.mut(0)
                 Turtles.defer(() -> i[] = i[] + 1) # N.B. immutable return
-                i[] = i[] + IR.block() do e
-                        i[] = i[] + 5
+                i[] = IR.block() do e
                         if i[] > 2
                                 e.return(2)
                         end
@@ -180,7 +176,8 @@ end
                 end
                 i[]
         end
-        @info C.translate(c)
+        defer_example = IR.proc(:defer_example, () -> c)
+        cc("test_defer", defer_example)
 end
 
 include("peg.jl")
@@ -194,8 +191,7 @@ include("peg.jl")
                 ok := PEG.reader(integer, env)
                 env.idx[]
         end
-        # @info C.translate(digits)
-        gcc("test_peg", compile(digits))
+        cc("test_peg", digits)
 end
 
 include("loop.jl")
@@ -214,6 +210,5 @@ include("loop.jl")
                 end
                 a[]
         end
-        # @info C.compile(even_squares)
-        gcc("test_loop", compile(even_squares))
+        cc("test_loop", even_squares)
 end
