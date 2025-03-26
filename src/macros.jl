@@ -94,7 +94,7 @@ end
 macro proc(ret, q)
         ty = IR.type(eval(ret))
         name, sig, blk = _proc(q)
-        placeholder = IR.Fn{ty}(Symbol("#"), [])
+        placeholder = IR.FnCall{ty}(Symbol("#"), [])
         r = quote
                 $name = $(IR.proc)($(QuoteNode(name)),
                         $(Expr(:function, sig, Expr(:block, placeholder))))

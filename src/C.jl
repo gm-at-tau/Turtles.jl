@@ -17,6 +17,7 @@ struct Phi <: Function
 end
 
 (phi::Phi)(c::IR.Code) = IR.visit(c, phi)
+(phi::Phi)(c::IR.RHS) = c
 (phi::Phi)(c::IR.If{Nothing}) = IR.visit(c, phi)
 (phi::Phi)(c::IR.If) =
         phi(IR.block(function (blk)
@@ -42,15 +43,19 @@ end
                 ret = Notation.:←(m, phi(c.__val__))
                 Notation.bind(ret, () -> IR.Ret{Nothing}(c.__lbl__, nothing))
         end
+(phi::Phi)(c::Any) = c
 
 flat(c::IR.Code) = IR.visit(c, flat)
+flat(c::IR.RHS) = c
 flat(c::IR.Bind) = hoist(flat(c.__val__), c.__cell__, flat(c.__cont__))
+flat(c::Any) = c
 
 hoist(c::IR.Code, v::IR.V, cont) = IR.Bind(c, v, cont)
 hoist(c::IR.Bind, v::IR.V, cont) =
         let h = hoist(c.__cont__, v, cont)
                 IR.Bind(c.__val__, c.__cell__, h)
         end
+hoist(c::Any) = c
 
 translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(c))
 
@@ -61,6 +66,7 @@ struct Forward <: Function
 end
 
 (fwd::Forward)(c::IR.Code) = (IR.visit(c, fwd); nothing)
+(fwd::Forward)(::IR.RHS) = nothing
 (fwd::Forward)(::Symbol) = nothing
 function (fwd::Forward)(c::IR.Proc)
         get!(fwd.procs, c.__symbol__) do
@@ -71,16 +77,17 @@ function (fwd::Forward)(c::IR.Proc)
         end
         nothing
 end
-(fwd::Forward)(c::IR.Fn) = fwd(c.__keyword__)
-function (fwd::Forward)(c::IR.Fn{IR.Struct{Tag,NT}}) where {Tag,NT}
+(fwd::Forward)(c::IR.FnCall) = fwd(c.__keyword__)
+function (fwd::Forward)(c::IR.FnCall{IR.Struct{Tag,NT}}) where {Tag,NT}
         fwd.structs[Tag] = IR.type(c)(nothing)
         fwd(c.__keyword__)
 end
-function (fwd::Forward)(c::IR.Code{IR.Struct{Tag,NT}}) where {Tag,NT}
+function (fwd::Forward)(c::IR.RHS{IR.Struct{Tag,NT}}) where {Tag,NT}
         fwd.structs[Tag] = IR.type(c)(nothing)
         IR.visit(c, fwd)
         nothing
 end
+(fwd::Forward)(::Any) = nothing
 
 compile(c::IR.Proc) =
         let fwd = Forward()
@@ -145,10 +152,10 @@ end
 Print.pretty(io::IO, pt::PrintC, c::IR.Blk) =
         (print(io, "{ "); pretty(io, pt, c.__blk__); print(io, "; } $(c.__lbl__): "))
 
-Print.pretty(io::IO, ::PrintC_Proc, c::IR.Write) = rvalue(io, c)
 Print.pretty(io::IO, ::PrintC_Proc, c::IR.If) = rvalue(io, c)
 Print.pretty(io::IO, ::PrintC_Proc, c::IR.Loop) = rvalue(io, c)
-Print.pretty(io::IO, ::PrintC_Proc, c::IR.Fn) =
+Print.pretty(io::IO, ::PrintC_Proc, c::IR.Write) = rvalue(io, c)
+Print.pretty(io::IO, ::PrintC_Proc, c::IR.FnCall) =
         (print(io, "return "); rvalue(io, c))
 Print.pretty(io::IO, ::PrintC_Proc, c::IR.Index) =
         (print(io, "return "); rvalue(io, c))

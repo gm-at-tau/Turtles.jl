@@ -28,11 +28,13 @@ struct FreeLabel <: Function
 end
 
 (ls::FreeLabel)(c::IR.Code) = IR.visit(c, ls)
+(ls::FreeLabel)(c::IR.RHS) = c
 (ls::FreeLabel)(c::IR.Blk) = (push!(ls.labels, c.__lbl__); IR.visit(c, ls))
 function (ls::FreeLabel)(c::IR.Ret)
         c.__lbl__ in ls.labels && return IR.visit(c, ls)
         ls.func(IR.visit(c, ls))
 end
+(ls::FreeLabel)(c::Any) = c
 
 Base.@kwdef struct Defer
         onexit::IR.Code{Nothing}

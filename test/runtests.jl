@@ -51,7 +51,7 @@ end
                 v.x[] = v.y[]
                 v.y[] = r
         end
-        @info C.translate(swapvec.__proc__[])
+        @info C.translate(swapvec[])
 
         @proc function memory_copy(dest::IR.R{Ptr{UInt8}}, src::IR.R{Ptr{UInt8}}, n::IR.R{Int})
                 IR.for(n) do i
@@ -88,7 +88,7 @@ end
                 if alldigit(m[])
                         m.size[] = m.size[] + 1
                 end
-                m[]
+                # m[]
         end
         # @info compile(alldigit)
         gcc("test_struct", compile(arbitrary))
@@ -160,7 +160,7 @@ end
                 r = x
                 m[]
         end
-        @info C.translate(testadd)
+        @info C.translate(testadd[])
         gcc("test_ref", compile(testadd))
 end
 

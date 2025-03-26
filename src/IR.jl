@@ -27,7 +27,8 @@ struct L
         L() = new(newlabel())
 end
 
-abstract type Rho{T} <: Code{T} end
+abstract type RHS{T} <: Code{T} end
+abstract type Rho{T} <: RHS{T} end
 abstract type Atom{T} <: Rho{T} end
 
 global newregister = newid()
@@ -63,12 +64,12 @@ struct Blk{T} <: Code{T}
         __blk__::Code{T}
 end
 
-struct Ret{T} <: Code{Nothing}
+struct Ret{T} <: RHS{Nothing}
         __lbl__::L
         __val__::Atom{T}
 end
 
-struct Proc{T,Ts<:Tuple} <: Atom{Function}
+struct Proc{T,Ts<:Tuple}
         __symbol__::Symbol
         __cells__::Ts
         __proc__::Ref{Code{T}}
@@ -95,7 +96,7 @@ struct Loop <: Code{Nothing}
         __blk__::Blk{BreakContinue}
 end
 
-struct Fn{T} <: Code{T}
+struct FnCall{T} <: RHS{T}
         __keyword__::Union{Symbol,Proc}
         __args__::Vector{Atom}
 end
@@ -105,7 +106,7 @@ struct Index{T} <: Rho{T}
         __index__::Union{Nothing,Symbol,Atom}
 end
 
-struct Write <: Code{Nothing}
+struct Write <: RHS{Nothing}
         __ref__::Rho{Ref{T}} where {T}
         __val__::Code
         Write(ref::Rho{Ref{T}}, val::Code{T}) where {T} = new(ref, val)
@@ -113,37 +114,59 @@ end
 
 function visit end
 
-visit(t::C, f::Function) where {C<:Atom} = t
-visit(t::Fn{T}, f::Function) where {T} = t
-visit(t::Index{T}, f::Function) where {T} = t
-visit(t::Write, f::Function) = t
+visit(t::Atom, ::Function) = t
+
+function visit(t::FnCall{T}, f::Function) where {T}
+        keyword = f(t.__keyword__)
+        args = f.(t.__args__)
+        isnothing(keyword) && all(isnothing, args) && return nothing
+        FnCall{T}(keyword, args)
+end
+
+function visit(t::Index{T}, f::Function) where {T}
+        head = f(t.__head__)
+        index = f(t.__index__)
+        isnothing(head) && isnothing(index) && return nothing
+        Index{T}(head, index)
+end
+
+function visit(t::Write, f::Function)
+        ref = f(t.__ref__)
+        val = f(t.__val__)
+        isnothing(ref) && isnothing(val) && return nothing
+        Write(ref, val)
+end
 
 function visit(t::Loop, f::Function)
         blk = f(t.__blk__)
-        isnothing(blk) && return t
+        isnothing(blk) && return nothing
         Loop(blk)
 end
+
 function visit(t::If, f::Function)
         bool = f(t.__bool__)
         ift = f(t.__iftrue__)
         iff = f(t.__iffalse__)
-        isnothing(bool) && isnothing(ift) && isnothing(iff) && return t
+        isnothing(bool) && isnothing(ift) && isnothing(iff) && return nothing
         If(bool, ift, iff)
 end
+
 function visit(t::Bind, f::Function)
         val = f(t.__val__)
         cont = f(t.__cont__)
-        isnothing(val) && isnothing(cont) && return t
+        isnothing(val) && isnothing(cont) && return nothing
         Bind(val, t.__cell__, cont)
 end
+
 function visit(t::Blk, f::Function)
         blk = f(t.__blk__)
-        isnothing(blk) && return t
+        isnothing(blk) && return nothing
         Blk(t.__lbl__, blk)
 end
+
 function visit(t::Ret, f::Function)
         val = f(t.__val__)
-        isnothing(val) && return t
+        isnothing(val) && return nothing
         Ret(t.__lbl__, val)
 end
 
@@ -163,7 +186,7 @@ struct Struct{Tag,NT<:NamedTuple}
         function Struct{Tag,NT}(args...) where {Tag,NT<:NamedTuple}
                 local inits = convert.(Code, args)
                 @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
-                fn(Struct{Tag,NT}, :init, inits...)
+                fncall(Struct{Tag,NT}, :init, inits...)
         end
 end
 
@@ -219,10 +242,10 @@ var"if"(bool::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
 var"if"(bool::Code{Bool}, iftrue::Code) =
         var"if"(bool, iftrue, CTE{Nothing}(nothing))
 
-fn(::Type{T}, keyword, args::Vararg{Code}) where {T} =
-        genlet((a...) -> Fn{T}(keyword, collect(a)), args...)
-fn(::Type{T}, keyword, args::Vararg) where {T} =
-        fn(T, keyword, convert.(Code, args)...)
+fncall(::Type{T}, keyword, args::Vararg{Code}) where {T} =
+        genlet((a...) -> FnCall{T}(keyword, collect(a)), args...)
+fncall(::Type{T}, keyword, args::Vararg) where {T} =
+        fncall(T, keyword, convert.(Code, args)...)
 
 function proc(s::Symbol, f::Function)
         local sig = tuple(only(methods(f)).sig.types...)
@@ -341,7 +364,7 @@ Notation.if(bool::CTE, iftrue::Function, iffalse::Function) =
 
 function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
         @assert all(type.(args) .== type.(Ts.types)) "Type mismatch"
-        fn(T, c, args...)
+        fncall(T, c, args...)
 end
 
 (fn::Let)(args...) = genlet(fn.f, convert.(Code, args)...)
@@ -388,28 +411,23 @@ const ARITY_1 = (:+, :-, :!, :~)
 
 for e = ARITY_1
         if e == :!
-                @eval Base.$e(val::Code{Bool}) = fn(Bool, $(QuoteNode(e)), val)
+                @eval Base.$e(val::Code{Bool}) = fncall(Bool, $(QuoteNode(e)), val)
         else
-                @eval Base.$e(val::Code{T}) where {T} = fn(T, $(QuoteNode(e)), val)
+                @eval Base.$e(val::Code{T}) where {T} = fncall(T, $(QuoteNode(e)), val)
         end
 end
 
 const ARITY_2 = (:+, :-, :*, :/, :%, :|, :&, :⊻, :<, :(==), :(<=))
 
 for e = ARITY_2
-        if e == :<
-                Base.isless(lhs::Code{T}, rhs::Code{T}) where {T} =
-                        fn(Bool, :<, lhs, rhs)
-                Base.isless(lhs::CTE{T}, rhs::CTE{T}) where {T} =
-                        CTE{Bool}(lhs.__val__ < rhs.__val__)
-        elseif e in (:(==), :(<=))
+        if e in (:(<), :(==), :(<=))
                 @eval Base.$e(lhs::Code{T}, rhs::Code{T}) where {T} =
-                        fn(Bool, $(QuoteNode(e)), lhs, rhs)
+                        fncall(Bool, $(QuoteNode(e)), lhs, rhs)
                 @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T} =
                         CTE{Bool}($e(lhs.__val__, rhs.__val__))
         else
                 @eval Base.$e(lhs::Code{T}, rhs::Code{T}) where {T} =
-                        fn(T, $(QuoteNode(e)), lhs, rhs)
+                        fncall(T, $(QuoteNode(e)), lhs, rhs)
                 @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T} =
                         CTE{T}($e(lhs.__val__, rhs.__val__))
         end
@@ -417,6 +435,10 @@ for e = ARITY_2
         @eval Base.$e(lhs::Code{T}, rhs::T) where {T} = $e(promote(lhs, rhs)...)
         @eval Base.$e(lhs::T, rhs::Code{T}) where {T} = $e(promote(lhs, rhs)...)
 end
+
+Base.max(a::IR.Atom{T}, b::IR.Atom{T}) where {T} = ifelse(a < b, b, a)
+Base.min(a::IR.Atom{T}, b::IR.Atom{T}) where {T} = ifelse(b < a, b, a)
+Base.isequal(lhs::Code{T}, rhs::Code{T}) where {T} = lhs === rhs
 
 Base.:|(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, rhs, lhs)
 Base.:|(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, lhs, rhs)
@@ -437,10 +459,15 @@ struct FreeVars <: Function
 end
 
 (vs::FreeVars)(c::IR.Code) = (IR.visit(c, vs); nothing)
-(vs::FreeVars)(c::IR.Blk) = (push!(vs.vars, c.__lbl__); IR.visit(c, vs); delete!(vs.vars, c.__lbl__); nothing)
-(vs::FreeVars)(c::IR.Bind) = (push!(vs.vars, c.__cell__); IR.visit(c, vs); delete!(vs.vars, c.__cell__); nothing)
-(vs::FreeVars)(c::IR.V) = (@assert (c in vs.vars) "$c is a free variable"; nothing)
-(vs::FreeVars)(c::IR.Ret) = (@assert (c.__lbl__ in vs.vars) "$(c.__lbl__) is a free label"; nothing)
+(vs::FreeVars)(c::IR.Blk) =
+        (push!(vs.vars, c.__lbl__); IR.visit(c, vs); delete!(vs.vars, c.__lbl__); nothing)
+(vs::FreeVars)(c::IR.Bind) =
+        (push!(vs.vars, c.__cell__); IR.visit(c, vs); delete!(vs.vars, c.__cell__); nothing)
+(vs::FreeVars)(c::IR.V) =
+        (@assert (c in vs.vars) "$c is a free variable"; nothing)
+(vs::FreeVars)(c::IR.Ret) =
+        (@assert (c.__lbl__ in vs.vars) "$(c.__lbl__) is a free label"; IR.visit(c, vs); nothing)
+(vs::FreeVars)(::Any) = nothing
 
 function assert_closed(r, cells)
         local free = FreeVars(Set(cells))
