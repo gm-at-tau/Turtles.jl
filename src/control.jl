@@ -5,34 +5,28 @@
 # Copyright (C) 2025 Gabriel Domingues <gm@mail.tau.ac.il>
 #
 
-Base.@kwdef struct Stamp
-        body::Function
-        iter::AbstractVector
-end
-
-stamp(body::Function, iter::AbstractVector) = Stamp(body=body, iter=iter)
-
-function Notation.bind(st::Stamp, f::Function)
-        foldr(st.iter; init=f()) do r, k
-                Notation.bind(Notation.apply(st.body, r), () -> k)
+stamp(body::Function, iter::AbstractVector) =
+        foldr(iter; init=nothing) do r, k
+                Notation.bind(Notation.apply(body, r), () -> k)
         end
-end
 
 IR.for(f::Function, r::AbstractVector) = stamp(f, r)
 IR.for(f::Function, c::Int) = IR.for(f, 0:c-1)
 IR.for(f::Function, c::IR.CTE{Int}) = IR.for(f, c.__val__)
 
 struct FreeLabel <: Function
-        func::Function
+        fn::Function
         labels::Set{IR.L}
+        FreeLabel(fn::Function, labels=Set{IR.L}()) = new(fn, labels)
 end
+freelabel(fn::Function, value::IR.Code) = FreeLabel(fn)(value)
 
 (ls::FreeLabel)(c::IR.Code) = IR.visit(c, ls)
 (ls::FreeLabel)(c::IR.RHS) = c
 (ls::FreeLabel)(c::IR.Blk) = (push!(ls.labels, c.__lbl__); IR.visit(c, ls))
 function (ls::FreeLabel)(c::IR.Ret)
         c.__lbl__ in ls.labels && return IR.visit(c, ls)
-        ls.func(IR.visit(c, ls))
+        ls.fn(IR.visit(c, ls))
 end
 (ls::FreeLabel)(c::Any) = c
 
@@ -43,13 +37,9 @@ end
 defer(onexit::Function) = Defer(onexit=Notation.apply(onexit))
 defer(onexit::IR.Code{Nothing}) = Defer(onexit=onexit)
 
-function Notation.bind(df::Defer, f::Function)
-        local freelabel = FreeLabel(Set()) do c
-                # N.B. immutable return
-                Notation.bind(df.onexit, () -> IR.Ret(c.__lbl__, c.__val__))
-        end
-        Notation.bind(freelabel(Notation.apply(f)), (v) ->
-                Notation.bind(df.onexit, () -> v))
+function Notation.bind(df::Defer, k::Function)
+        fn = v -> Notation.bind(df.onexit, () -> v)
+        Notation.bind(freelabel(fn, Notation.apply(k)), fn)
 end
 
 Base.@kwdef struct Guard
