@@ -9,13 +9,11 @@ module IR
 
 export Atom, R, CTE
 
-using ..Turtles
 using ..Notation
 
 public Code, RHS, Rho, L, V, M, BreakContinue, Break, Continue
 public Bind, Blk, Ret, Proc, If, Loop, FnCall, Index, Write, Struct
-public visit, type, struct, block, loop, if, fncall, proc, genlet
-public let, init, mut, while, for
+public visit, type, struct, block, loop, if, fncall, write, index, proc, genlet
 
 @doc """
 	newid()
@@ -383,8 +381,7 @@ Creates a `If` expression in ANF.
 """
 var"if"(bool::Code{Bool}, iftrue::Code{T}, iffalse::Code{T}) where {T} =
         genlet(b -> If{T}(b, iftrue, iffalse), bool)
-var"if"(bool::Code{Bool}, iftrue::Code) =
-        var"if"(bool, iftrue, CTE{Nothing}(nothing))
+var"if"(bool::Code{Bool}, iftrue::Code) = var"if"(bool, iftrue, CTE{Nothing}(nothing))
 
 @doc """
 	fncall(type, keyword, args...)
@@ -393,6 +390,44 @@ Creates a `FnCall` expression in ANF.
 """
 fncall(::Type{T}, keyword, args::Vararg) where {T} =
 	genlet(a -> FnCall{T}(keyword, a), collect(Code, args))
+
+@doc """
+	addr(ref, idx...)
+
+Creates a `Index{Ref}` expression in ANF.
+"""
+addr(c::Code, s) = genlet((a, h) -> addr(h, a), s, c) # N.B. opposite order
+addr(c::Rho, s::Int) = addr(c, cte(s))
+addr(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{Ref{T}}(c, a), s)
+addr(c::Rho{Ref{T}}, s) where {T} = getindex(c, s)
+addr(c::Rho{Ref{T}}) where {T} = Index{Ref{T}}(c, nothing)
+
+@doc """
+	index(ref, idx...)
+
+Creates a `Index` expression in ANF.
+"""
+index(c::Code, s...) =
+        genlet(a -> genlet(h -> index(h, a...), c), collect(Code, s))
+index(c::Rho, s...) = throw(MethodError(Base.getindex, Tuple{typeof(c),typeof.(s)...}))
+index(c::Rho{Ref{T}}) where {T} = Index{T}(c, nothing)
+index(c::Rho, s::Int) = index(c, cte(s))
+index(c::Rho{Ref{Ptr{T}}}, s::Code{Int}) where {T} = genlet(a -> Index{T}(c, a), s)
+index(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{T}(c, a), s)
+index(c::Rho{Struct{Tag,NT}}, s::Symbol) where {Tag,NT} =
+        Index{propertytype(Struct{Tag,NT}, s)}(c, s)
+index(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} =
+        Index{Ref{propertytype(Struct{Tag,NT}, s)}}(c, s)
+
+@doc """
+	write(ref, value)
+
+Creates a `Write` expression in ANF.
+"""
+write(c::Rho{Ref{T}}, v::Code{T}) where {T} =
+        genlet(a -> Write(c, a), v)
+write(c::Code{Ref{T}}, v::Code{T}) where {T} =
+        genlet((a, h) -> Write(h, a), v, c) # N.B. reverse order
 
 @doc """
 	proc(name, f)
@@ -436,216 +471,31 @@ function genlet(f::Function, args::Vector{Code})
         return recur()
 end
 
-# Extensions
-
-struct Let{F<:Function}
-        f::F
-end
-
-@doc """
-	let(f)
-
-Converts the function to ANF when called.
-"""
-var"let"(fn) = Let(fn)
-
-struct Init{T}
-        __init__::T
-end
-
-@doc """
-	init(t)
-
-Initializes a register with the constant `t` when called with `Notation.bind`.
-"""
-init(t::String) = Init{Ptr{UInt8}}(pointer(t))
-
-struct Mut{T}
-        __init__::Code{T}
-end
-
-@doc """
-	mut(t)
-
-Initializes a mutable variable with the constant `t` when called with `Notation.bind`.
-"""
-mut(t::Code{T}) where {T} = Mut{T}(t)
-
-for ty = TYPES
-        @eval init(t::$ty) = Init{$ty}(t)
-        @eval mut(t::$ty) = Mut{$ty}(t)
-end
-
-@doc """
-	while(body, condition)
-
-Creates a C-style while-loop.
-"""
-var"while"(v::Function, c::Code{Bool}) = var"while"(c, v)
-var"while"(c::Code{Bool}, v::Function) =
-        loop(blk -> Notation.if(c, () -> Notation.apply(v, blk), () -> blk.break))
-
-_forloop(f, c) = Notation.bind(mut(0), i ->
-        var"while"(i[] < c) do blk
-                Notation.bind(i[], r -> # N.B. Immutable
-                        Notation.bind(Notation.:←(i, r + 1), () ->
-                                Notation.apply(f, r, blk)))
-        end)
-
-@doc """
-	for(body, iter)
-
-Creates a C-style for-loop with iterable `iter`.
-"""
-var"for"(f::Function, c::Code{Int}) = _forloop(f, c)
-var"for"(f::Function, c::Init{Int}) = _forloop(f, c.__init__)
-
-# Conversions
-
-for ty = TYPES
-        @eval Base.convert(::Type{Code}, c::$ty) = CTE{$ty}(c)
-        @eval Base.convert(::Type{<:Code{$ty}}, c::$ty) = CTE{$ty}(c)
-        @eval Base.promote_rule(::Type{T}, ::Type{$ty}) where {T<:Code{$ty}} = T
-        @eval Base.promote_rule(::Type{$ty}, ::Type{T}) where {T<:Code{$ty}} = T
-end
-
-# Overload
-
-function _bind(val::Any, cell::V, f::Function)
+function bind(val::Any, cell::V, f::Function)
         local cont = Notation.apply(f, cell)
         isnothing(cont) && return val
         Bind(val, cell, cont)
 end
 
-function Notation.bind(c::Code{T}, f::Function) where {T}
-        local cell = (Notation.arity(f) == 0) ? R{Nothing}() : R{T}()
-        _bind(c, cell, f)
-end
-
-Notation.bind(c::CTE, f::Function) = Notation.apply(f, c.__val__)
-Notation.bind(c::Atom, f::Function) = Notation.apply(f, c)
-
-Notation.bind(c::Init{T}, f::Function) where {T} =
-        _bind(CTE{T}(c.__init__), R{T}(), f::Function)
-Notation.bind(c::Mut{T}, f::Function) where {T} =
-        _bind(c.__init__, M{T}(), f::Function)
-
-Base.ifelse(bool::Code, iftrue, iffalse) = var"if"(bool, iftrue, iffalse)
-Base.ifelse(bool::CTE, iftrue, iffalse) = ifelse(bool.__val__, iftrue, iffalse)
-Notation.if(bool::Code, iftrue::Function) =
-        var"if"(bool, convert(Code, iftrue()))
-Notation.if(bool::Code, iftrue::Function, iffalse::Function) =
-        var"if"(bool, convert(Code, iftrue()), convert(Code, iffalse()))
-Notation.if(bool::CTE, iftrue::Function) =
-        Notation.if(bool.__val__, iftrue)
-Notation.if(bool::CTE, iftrue::Function, iffalse::Function) =
-        Notation.if(bool.__val__, iftrue, iffalse)
-
-function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
-        @assert all(type.(args) .== type.(Ts.types)) "Type mismatch"
-        fncall(T, c, args...)
-end
-
-(fn::Let)(args...) = genlet((a) -> fn.f(a...), collect(Code, args))
-
-Notation.addr(c::Code, s) =
-        genlet((a, h) -> Notation.addr(h, a), s, c) # N.B. opposite order
-Notation.addr(c::Rho, s::Int) = Notation.addr(c, cte(s))
-Notation.addr(c::Rho{Ptr{T}}, s::Code{Int}) where {T} =
-        genlet(a -> Index{Ref{T}}(c, a), s)
-Notation.addr(c::Rho{Ref{T}}, s) where {T} = getindex(c, s)
-Notation.addr(c::Rho{Ref{T}}) where {T} = Index{Ref{T}}(c, nothing)
-
-Base.getindex(c::Code, s...) =
-	genlet(a -> genlet(h -> getindex(h, a...), c), collect(Code, s))
-Base.getindex(c::Rho, s...) = throw(MethodError(Base.getindex, Tuple{typeof(c),typeof.(s)...}))
-Base.getindex(c::Rho{Ref{T}}) where {T} = Index{T}(c, nothing)
-Base.getindex(c::Rho, s::Int) = getindex(c, cte(s))
-Base.getindex(c::Rho{Ref{Ptr{T}}}, s::Code{Int}) where {T} =
-        genlet(a -> Index{T}(c, a), s)
-Base.getindex(c::Rho{Ptr{T}}, s::Code{Int}) where {T} =
-        genlet(a -> Index{T}(c, a), s)
-
-Base.getproperty(v::Code, s::Symbol) =
-        startswith(string(s), "__") ? getfield(v, s) : Base.getindex(v, s)
-
-function _propertytype(t::Type{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
+function propertytype(::Type{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         local found = findall(fieldnames(NT) .== s)
         @assert length(found) == 1 "Found $(found) matching types"
         fieldtypes(NT)[only(found)]
 end
 
-Base.getindex(c::Rho{Struct{Tag,NT}}, s::Symbol) where {Tag,NT} =
-        Index{_propertytype(Struct{Tag,NT}, s)}(c, s)
-Base.getindex(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} =
-        Index{Ref{_propertytype(Struct{Tag,NT}, s)}}(c, s)
-
-Notation.:←(c::Rho{Ref{T}}, v::Code{T}) where {T} =
-        genlet(a -> Write(c, a), v)
-Notation.:←(c::Code{Ref{T}}, v::Code{T}) where {T} =
-        genlet((a, h) -> Write(h, a), v, c) # N.B. reverse order
-Notation.:←(c::Code{Ref{T}}, v::T) where {T} = Notation.:←(c, cte(v))
-
-const ARITY_1 = (:+, :-, :!, :~)
-
-for e = ARITY_1
-        if e == :!
-                @eval Base.$e(val::Code{Bool}) = fncall(Bool, $(QuoteNode(e)), val)
-        else
-                @eval Base.$e(val::Code{T}) where {T} = fncall(T, $(QuoteNode(e)), val)
-        end
-end
-
-const ARITY_2 = (:+, :-, :*, :/, :%, :|, :&, :⊻, :<<, :>>, :(<), :(==), :(<=))
-
-for e = ARITY_2
-        if e in (:(<), :(==), :(<=))
-                @eval Base.$e(lhs::Code{T}, rhs::Code{T}) where {T} =
-                        fncall(Bool, $(QuoteNode(e)), lhs, rhs)
-                @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T} =
-                        CTE{Bool}($e(lhs.__val__, rhs.__val__))
-        else
-                @eval Base.$e(lhs::Code{T}, rhs::Code{T}) where {T} =
-                        fncall(T, $(QuoteNode(e)), lhs, rhs)
-                @eval Base.$e(lhs::CTE{T}, rhs::CTE{T}) where {T} =
-                        CTE{T}($e(lhs.__val__, rhs.__val__))
-        end
-
-        @eval Base.$e(lhs::Code{T}, rhs::T) where {T} = $e(promote(lhs, rhs)...)
-        @eval Base.$e(lhs::T, rhs::Code{T}) where {T} = $e(promote(lhs, rhs)...)
-end
-
-Base.max(a::IR.Atom{T}, b::IR.Atom{T}) where {T} = ifelse(a < b, b, a)
-Base.min(a::IR.Atom{T}, b::IR.Atom{T}) where {T} = ifelse(b < a, b, a)
-Base.isequal(lhs::Code{T}, rhs::Code{T}) where {T} = lhs === rhs
-
-Base.:|(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, rhs, lhs)
-Base.:|(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, lhs, rhs)
-Base.:|(lhs::CTE{Bool}, rhs::CTE{Bool}) = CTE{Bool}(lhs.__val__ | rhs.__val__)
-
-Base.:&(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, lhs, rhs)
-Base.:&(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, rhs, lhs)
-Base.:&(lhs::CTE{Bool}, rhs::CTE{Bool}) = CTE{Bool}(lhs.__val__ & rhs.__val__)
-
-Base.:⊻(lhs::Code{Bool}, rhs::CTE{Bool}) = ifelse(rhs.__val__, !lhs, lhs)
-Base.:⊻(lhs::CTE{Bool}, rhs::Code{Bool}) = ifelse(lhs.__val__, !rhs, rhs)
-Base.:⊻(lhs::CTE{Bool}, rhs::CTE{Bool}) = CTE{Bool}(lhs.__val__ ⊻ rhs.__val__)
-
-# Free Variables
-
 struct FreeVars <: Function
         vars::Set{Union{L,V}}
 end
 
-(vs::FreeVars)(c::IR.Code) = (IR.visit(c, vs); nothing)
-(vs::FreeVars)(c::IR.Blk) =
-        (push!(vs.vars, c.__lbl__); IR.visit(c, vs); delete!(vs.vars, c.__lbl__); nothing)
-(vs::FreeVars)(c::IR.Bind) =
-        (push!(vs.vars, c.__cell__); IR.visit(c, vs); delete!(vs.vars, c.__cell__); nothing)
-(vs::FreeVars)(c::IR.V) =
+(vs::FreeVars)(c::Code) = (visit(c, vs); nothing)
+(vs::FreeVars)(c::Blk) =
+        (push!(vs.vars, c.__lbl__); visit(c, vs); delete!(vs.vars, c.__lbl__); nothing)
+(vs::FreeVars)(c::Bind) =
+        (push!(vs.vars, c.__cell__); visit(c, vs); delete!(vs.vars, c.__cell__); nothing)
+(vs::FreeVars)(c::V) =
         (@assert (c in vs.vars) "$c is a free variable"; nothing)
-(vs::FreeVars)(c::IR.Ret) =
-        (@assert (c.__lbl__ in vs.vars) "$(c.__lbl__) is a free label"; IR.visit(c, vs); nothing)
+(vs::FreeVars)(c::Ret) =
+        (@assert (c.__lbl__ in vs.vars) "$(c.__lbl__) is a free label"; visit(c, vs); nothing)
 (vs::FreeVars)(::Any) = nothing
 
 function assert_closed(r, cells)
@@ -653,5 +503,7 @@ function assert_closed(r, cells)
         free(r)
         return r
 end
+
+include("overload.jl")
 
 end # module IR
