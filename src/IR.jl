@@ -398,9 +398,12 @@ Creates a `Index{Ref}` expression in ANF.
 """
 addr(c::Code, s) = genlet((a, h) -> addr(h, a), s, c) # N.B. opposite order
 addr(c::Rho, s::Int) = addr(c, cte(s))
-addr(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{Ref{T}}(c, a), s)
-addr(c::Rho{Ref{T}}, s) where {T} = getindex(c, s)
 addr(c::Rho{Ref{T}}) where {T} = Index{Ref{T}}(c, nothing)
+addr(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{Ref{T}}(c, a), s)
+addr(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} =
+        Index{Ref{propertytype(Struct{Tag,NT}, s)}}(c, s)
+
+addr(c::Rho, s...) = throw(MethodError(addr, Tuple{typeof(c),typeof.(s)...}))
 
 @doc """
 	index(ref, idx...)
@@ -409,15 +412,13 @@ Creates a `Index` expression in ANF.
 """
 index(c::Code, s...) =
         genlet(a -> genlet(h -> index(h, a...), c), collect(Code, s))
-index(c::Rho, s...) = throw(MethodError(Base.getindex, Tuple{typeof(c),typeof.(s)...}))
 index(c::Rho{Ref{T}}) where {T} = Index{T}(c, nothing)
 index(c::Rho, s::Int) = index(c, cte(s))
-index(c::Rho{Ref{Ptr{T}}}, s::Code{Int}) where {T} = genlet(a -> Index{T}(c, a), s)
 index(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{T}(c, a), s)
 index(c::Rho{Struct{Tag,NT}}, s::Symbol) where {Tag,NT} =
         Index{propertytype(Struct{Tag,NT}, s)}(c, s)
-index(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} =
-        Index{Ref{propertytype(Struct{Tag,NT}, s)}}(c, s)
+
+index(c::Rho, s...) = throw(MethodError(index, Tuple{typeof(c),typeof.(s)...}))
 
 @doc """
 	write(ref, value)

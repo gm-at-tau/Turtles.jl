@@ -110,7 +110,10 @@ end
 (fn::Let)(args...) = genlet((a) -> fn.f(a...), collect(Code, args))
 
 Notation.addr(c::Code, s...) = addr(c, s...)
+
 Base.getindex(c::Code, s...) = index(c, s...)
+Base.getindex(c::Rho{Ref{Ptr{T}}}, s::Code{Int}) where {T} = index(index(c), s)
+Base.getindex(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag, NT} = addr(c, s)
 Base.getproperty(v::Code, s::Symbol) =
         startswith(string(s), "__") ? getfield(v, s) : Base.getindex(v, s)
 
