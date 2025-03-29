@@ -404,6 +404,7 @@ Creates a `Proc` named `name` from a Julia function with input registers.
 function proc(s::Symbol, f::Function)
         local sig = tuple(only(methods(f)).sig.types...)
         local types = type.(sig[2:end])
+        @assert !any(Nothing .== types) "`Nothing` input argument not allowed"
         local cells = tuple([R{ty}() for ty = types]...)
         local val = f(cells...)
         Proc(s, cells, val)

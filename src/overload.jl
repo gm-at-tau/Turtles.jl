@@ -107,7 +107,8 @@ Notation.if(bool::CTE, iftrue::Function, iffalse::Function) =
         Notation.if(bool.__val__, iftrue, iffalse)
 
 function (c::FFI.Link{T,Ts})(args::Vararg) where {T,Ts}
-        fnargs = convert.(Code, args)
+        local fnargs = convert.(Code, args)
+        @assert length(fnargs) == length(Ts.types) "Arity mismatch"
         @assert all(type.(fnargs) .== type.(Ts.types)) "Type mismatch"
         fncall(T, c, fnargs...)
 end

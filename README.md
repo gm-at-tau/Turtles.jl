@@ -17,7 +17,7 @@ $ julia --project=. -q -e 'using Pkg; Pkg.test()'
 ## FFI
 
 See `test/ffi_test.jl` for an example of importing external headers.
-You can run the example that imports a part of [raylib](https://github.com/raysan5/raylib) API.
+You can run the example that imports a part of [raylib](https://github.com/raysan5/raylib) API (version 5.5).
 Note that you might need to update the linking paths to raylib.
 ```sh
 $ julia --project=. -q test/ffi_test.jl

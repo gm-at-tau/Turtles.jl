@@ -13,10 +13,10 @@ using Turtles
 const rl = FFI.Header("<raylib/raylib.h>")
 
 rl.InitWindow = FFI.import(:InitWindow, Nothing, (Int32, Int32, Ptr{UInt8}))
-rl.CloseWindow = FFI.import(:CloseWindow, Nothing, (Nothing,))
-rl.WindowShouldClose = FFI.import(:WindowShouldClose, Bool, (Nothing,))
-rl.BeginDrawing = FFI.import(:BeginDrawing, Nothing, (Nothing,))
-rl.EndDrawing = FFI.import(:EndDrawing, Nothing, (Nothing,))
+rl.CloseWindow = FFI.import(:CloseWindow, Nothing, tuple())
+rl.WindowShouldClose = FFI.import(:WindowShouldClose, Bool, tuple())
+rl.BeginDrawing = FFI.import(:BeginDrawing, Nothing, tuple())
+rl.EndDrawing = FFI.import(:EndDrawing, Nothing, tuple())
 
 rl.Color = FFI.struct(:Color, :r => UInt8, :g => UInt8, :b => UInt8, :a => UInt8)
 

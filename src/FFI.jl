@@ -60,6 +60,7 @@ Creates an `Import` named `name` from a function signature.
 """
 var"import"(s::Symbol, rettype::Type, argtypes::Tuple) =
         let sig = tuple([Name{ty}() for ty = argtypes]...)
+		@assert !any(Nothing .== argtypes) "`Nothing` input argument not allowed"
 		Import{rettype, typeof(sig)}(s)
         end
 

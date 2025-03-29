@@ -14,6 +14,11 @@ using ..IR, ..FFI
 abstract type Printer end
 struct PrintIR <: Printer end
 
+@doc """
+	pretty(io, printer, code)
+
+Pretty-prints `code` to `io` overloaded by `printer`.
+"""
 function pretty end
 
 INDENT = 0
@@ -48,6 +53,7 @@ function pretty(io::IO, pt::Printer, c::IR.FnCall{T}) where {T}
                 print(io, "(")
                 for (i, c) = enumerate(c.__args__)
                         (i > 1) && print(io, ", ")
+                        @assert IR.type(c) != Nothing "Cannot print `Nothing` input"
                         pretty(io, pt, c)
                 end
                 print(io, ")")
