@@ -71,6 +71,10 @@ Creates a C-style for-loop with iterable `iter`.
 var"for"(f::Function, c::Code{Int}) = _forloop(f, c)
 var"for"(f::Function, c::Init{Int}) = _forloop(f, c.__init__)
 
+Base.setindex!(proc::Proc, f::Function) =
+        (proc.__proc__[] = assert_closed(f(proc.__cells__...), proc.__cells__))
+Base.getindex(proc::Proc) = proc.__proc__[]
+
 # Conversions
 
 for ty = TYPES
@@ -102,10 +106,16 @@ Notation.if(bool::CTE, iftrue::Function) =
 Notation.if(bool::CTE, iftrue::Function, iffalse::Function) =
         Notation.if(bool.__val__, iftrue, iffalse)
 
-function (c::Link{T,Ts})(args::Vararg) where {T,Ts}
+function (c::FFI.Link{T,Ts})(args::Vararg) where {T,Ts}
         fnargs = convert.(Code, args)
         @assert all(type.(fnargs) .== type.(Ts.types)) "Type mismatch"
         fncall(T, c, fnargs...)
+end
+
+function (s::FFI.Struct{Tag,NT})(args...) where {Tag,NT<:NamedTuple}
+        local inits = convert.(Code, args)
+        @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
+        fncall(FFI.Struct{Tag,NT}, :init, inits...)
 end
 
 (fn::Let)(args...) = genlet((a) -> fn.f(a...), collect(Code, args))
@@ -114,7 +124,7 @@ Notation.addr(c::Code, s...) = addr(c, s...)
 
 Base.getindex(c::Code, s...) = index(c, s...)
 Base.getindex(c::Rho{Ref{Ptr{T}}}, s::Code{Int}) where {T} = index(index(c), s)
-Base.getindex(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} = addr(c, s)
+Base.getindex(c::Rho{Ref{FFI.Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} = addr(c, s)
 Base.getproperty(v::Code, s::Symbol) =
         startswith(string(s), "__") ? getfield(v, s) : Base.getindex(v, s)
 

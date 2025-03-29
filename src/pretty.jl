@@ -9,7 +9,7 @@ module Print
 
 export Printer, pretty
 
-using ..IR
+using ..IR, ..FFI
 
 abstract type Printer end
 struct PrintIR <: Printer end
@@ -35,7 +35,7 @@ function pretty(io::IO, pt::PrintIR, c::IR.Blk)
         print(io, "}")
 end
 
-typename(::Type{IR.Struct{Tag,NT}}) where {Tag,NT} = string("struct ", Tag)
+typename(::Type{FFI.Struct{Tag,NT}}) where {Tag,NT} = string("struct ", Tag)
 typename(::Type{Bool}) = "bool"
 typename(::Type{Nothing}) = "void"
 typename(::Type{T}) where {T<:Integer} = lowercase(string(T, "_t"))
@@ -43,7 +43,7 @@ typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
 typename(::Type{Ref{T}}) where {T} = string(typename(T), "*")
 
 function pretty(io::IO, pt::Printer, c::IR.FnCall{T}) where {T}
-        if c.__keyword__ isa IR.Link
+        if c.__keyword__ isa FFI.Link
                 print(io, c.__keyword__.__symbol__)
                 print(io, "(")
                 for (i, c) = enumerate(c.__args__)

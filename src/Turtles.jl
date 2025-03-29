@@ -32,6 +32,7 @@ end # module Notation
 
 # Imports
 
+include("FFI.jl")
 include("IR.jl")
 include("macros.jl")
 include("control.jl")
@@ -43,7 +44,7 @@ include("C.jl")
 
 Compiles a procedure into the corresponding C program as text.
 """
-function compile(procs::Vararg{IR.Proc}; deps=C.Header[])
+function compile(procs::Vararg{IR.Proc}; deps=FFI.Header[])
         io = IOBuffer()
         print(io, "#include <stdbool.h>\n#include <stdint.h>\n")
         for dep = deps
@@ -57,7 +58,7 @@ function compile(procs::Vararg{IR.Proc}; deps=C.Header[])
         end
         print(io, '\n')
 
-        hdr = C.Header()
+        hdr = FFI.Header()
         for proc = procs
                 C.compile(proc, hdr)
         end
@@ -78,6 +79,6 @@ function compile(procs::Vararg{IR.Proc}; deps=C.Header[])
         String(take!(io))
 end
 
-export @code, @proc, @addr, IR, C, compile
+export @code, @proc, @addr, IR, C, FFI, compile
 
 end # module Turtles

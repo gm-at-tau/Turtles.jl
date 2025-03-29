@@ -45,8 +45,8 @@ end
 end
 
 @testset "pointers and references" begin
-        Vec2 = IR.struct(:vec2, :x => Int, :y => Int)
-        @proc function swapvec(v::IR.R{Ref{Vec2}})
+        Vec2 = FFI.struct(:vec2, :x => Int, :y => Int)
+        @proc function swapvec(v::IR.R{Ref{typeof(Vec2)}})
                 r := v.x[]
                 v.x[] = v.y[]
                 v.y[] = r
@@ -72,17 +72,17 @@ end
                         false
                 end
         end
-        StringView = IR.struct(:string_view,
+        StringView = FFI.struct(:string_view,
                 :ptr => Ptr{UInt8},
                 :size => Int,
         )
-        @proc function alldigit(array::IR.R{StringView})
+        @proc function alldigit(array::IR.R{typeof(StringView)})
                 alltrue(array) do c
                         (c >= UInt8('0')) & (c <= UInt8('9'))
                 end
         end
 
-        @proc function arbitrary(array::IR.R{StringView})
+        @proc function arbitrary(array::IR.R{typeof(StringView)})
                 m := IR.mut(array)
                 if alldigit(m[])
                         m.size[] = m.size[] + 1
@@ -144,12 +144,12 @@ end
 end
 
 @testset "ref passing" begin
-        Vec2 = IR.struct(:vec2, :x => Int, :y => Int)
+        Vec2 = FFI.struct(:vec2, :x => Int, :y => Int)
         @proc function add(a::IR.R{Ref{Int}}, b::IR.R{Int})
                 a[] = a[] + b
         end
 
-        @proc function testadd(x::IR.R{Int}, f::IR.R{Ref{Vec2}}, t::IR.R{Ptr{Vec2}})
+        @proc function testadd(x::IR.R{Int}, f::IR.R{Ref{typeof(Vec2)}}, t::IR.R{Ptr{typeof(Vec2)}})
                 m := IR.mut(Vec2(x, f.y[]))
                 add(@addr(m.y), x)
                 add(f.x, m.y[])

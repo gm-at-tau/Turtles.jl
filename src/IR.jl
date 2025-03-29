@@ -9,12 +9,12 @@ module IR
 
 export Atom, R, CTE
 
-using ..Notation
+using ..Notation, ..FFI
 
 public Code, RHS, Rho, Link, Proc, L, V, M, BreakContinue, Break, Continue
-public Bind, Blk, Ret, If, Loop, FnCall, Index, Write, Struct
-public block, loop, fncall, write, index, if
-public visit, type, var"struct", proc, genlet
+public Bind, Blk, Ret, If, Loop, FnCall, Index, Write
+public block, loop, fncall, write, index, var"if"
+public visit, type, proc, genlet
 
 @doc """
 	newid()
@@ -39,28 +39,18 @@ Abstract type that represents a chunk of IR code that yields a value of type `T`
 abstract type Code{T} end
 
 @doc """
-	Link{T, Ts}
-
-Abstract type for linked symbols.
-"""
-abstract type Link{T,Ts} end
-
-@doc """
-	Proc{T, Ts} <: Link{T, Ts}
+	Proc{T, Ts} <: FFI.Link{T, Ts}
 
 A procedure that returns a value of type `T` with arguments of types `Ts`, where `Ts` is a tuple of register types.
 The constructor guarantees the code block is lexically closed.
 """
-struct Proc{T,Ts<:Tuple} <: Link{T,Ts}
+struct Proc{T,Ts<:Tuple} <: FFI.Link{T,Ts}
         __symbol__::Symbol
         __cells__::Ts
         __proc__::Ref{Code{T}}
         Proc(s, cells::Ts, r::Code{T}) where {T,Ts} =
                 new{T,Ts}(s, cells, Ref{Code{T}}(assert_closed(r, cells)))
 end
-Base.setindex!(proc::Proc, f::Function) =
-        (proc.__proc__[] = assert_closed(f(proc.__cells__...), proc.__cells__))
-Base.getindex(proc::Proc) = proc.__proc__[]
 
 @doc """
 	L
@@ -199,7 +189,7 @@ end
 An expression for function call, this included builtin operators and procedures.
 """
 struct FnCall{T} <: RHS{T}
-        __keyword__::Union{Symbol,Link}
+        __keyword__::Union{Symbol,FFI.Link}
         __args__::Vector{Atom}
 end
 
@@ -288,8 +278,6 @@ function visit(t::Ret, f::Function)
         Ret(t.__lbl__, val)
 end
 
-# Types
-
 @doc """
 	type(code)
 
@@ -297,6 +285,7 @@ Gives the underlying return type of a code expression or code type.
 """
 type(::Type{<:Code{T}}) where {T} = T
 type(::C) where {T,C<:Code{T}} = T
+type(::Type{FFI.Name{T}}) where {T} = T
 
 @doc """
 	TYPES
@@ -304,35 +293,6 @@ type(::C) where {T,C<:Code{T}} = T
 Basic C types that match with Julia types.
 """
 const TYPES = (Int32, Int64, UInt8, Bool, Nothing, Ptr{UInt8})
-
-@doc """
-	Struct{Tag, NT}
-
-A type-level marker for a structure type in C.
-"""
-struct Struct{Tag,NT<:NamedTuple}
-        function Struct{Tag,NT}(args...) where {Tag,NT<:NamedTuple}
-                local inits = convert.(Code, args)
-                @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
-                fncall(Struct{Tag,NT}, :init, inits...)
-        end
-end
-
-@doc """
-	struct(tag, fields...)
-
-Creates a new structure type with `tag` and `fields` names and types.
-"""
-function var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}})
-        local t = NamedTuple(fields)
-        return Struct{tag,NamedTuple{keys(t),Tuple{values(t)...}}}
-end
-
-Base.pairs(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} = NT
-Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} =
-        fieldnames(NT)
-Base.zero(t::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} =
-        t(zip(fieldnames(NT), zero.(fieldtypes(NT)))...)
 
 # Constructors
 
@@ -406,8 +366,8 @@ addr(c::Code, s) = genlet((a, h) -> addr(h, a), s, c) # N.B. opposite order
 addr(c::Rho, s::Int) = addr(c, cte(s))
 addr(c::Rho{Ref{T}}) where {T} = Index{Ref{T}}(c, nothing)
 addr(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{Ref{T}}(c, a), s)
-addr(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} =
-        Index{Ref{propertytype(Struct{Tag,NT}, s)}}(c, s)
+addr(c::Rho{Ref{FFI.Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} =
+        Index{Ref{propertytype(FFI.Struct{Tag,NT}, s)}}(c, s)
 
 addr(c::Rho, s...) = throw(MethodError(addr, Tuple{typeof(c),typeof.(s)...}))
 
@@ -421,8 +381,8 @@ index(c::Code, s...) =
 index(c::Rho{Ref{T}}) where {T} = Index{T}(c, nothing)
 index(c::Rho, s::Int) = index(c, cte(s))
 index(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{T}(c, a), s)
-index(c::Rho{Struct{Tag,NT}}, s::Symbol) where {Tag,NT} =
-        Index{propertytype(Struct{Tag,NT}, s)}(c, s)
+index(c::Rho{FFI.Struct{Tag,NT}}, s::Symbol) where {Tag,NT} =
+        Index{propertytype(FFI.Struct{Tag,NT}, s)}(c, s)
 
 index(c::Rho, s...) = throw(MethodError(index, Tuple{typeof(c),typeof.(s)...}))
 
@@ -484,7 +444,7 @@ function bind(val::Any, cell::V, f::Function)
         Bind(val, cell, cont)
 end
 
-function propertytype(::Type{Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
+function propertytype(::Type{FFI.Struct{Tag,NT}}, s::Symbol) where {Tag,NT}
         local found = findall(fieldnames(NT) .== s)
         @assert length(found) == 1 "Found $(found) matching types"
         fieldtypes(NT)[only(found)]

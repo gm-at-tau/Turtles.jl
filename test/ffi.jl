@@ -10,18 +10,18 @@
 using Turtles
 
 # N.B. Path to raylib in your system
-const rl = C.Header("<raylib/raylib.h>")
+const rl = FFI.Header("<raylib/raylib.h>")
 
-rl.InitWindow = C.import(:InitWindow, Nothing, (Int32, Int32, Ptr{UInt8}))
-rl.CloseWindow = C.import(:CloseWindow, Nothing, (Nothing,))
-rl.WindowShouldClose = C.import(:WindowShouldClose, Bool, (Nothing,))
-rl.BeginDrawing = C.import(:BeginDrawing, Nothing, (Nothing,))
-rl.EndDrawing = C.import(:EndDrawing, Nothing, (Nothing,))
+rl.InitWindow = FFI.import(:InitWindow, Nothing, (Int32, Int32, Ptr{UInt8}))
+rl.CloseWindow = FFI.import(:CloseWindow, Nothing, (Nothing,))
+rl.WindowShouldClose = FFI.import(:WindowShouldClose, Bool, (Nothing,))
+rl.BeginDrawing = FFI.import(:BeginDrawing, Nothing, (Nothing,))
+rl.EndDrawing = FFI.import(:EndDrawing, Nothing, (Nothing,))
 
-rl.Color = IR.struct(:Color, :r => UInt8, :g => UInt8, :b => UInt8, :a => UInt8)
+rl.Color = FFI.struct(:Color, :r => UInt8, :g => UInt8, :b => UInt8, :a => UInt8)
 
-rl.ClearBackground = C.import(:ClearBackground, Nothing, (rl.Color,))
-rl.DrawText = C.import(:DrawText, Nothing, (Ptr{UInt8}, Int32, Int32, Int32, rl.Color))
+rl.ClearBackground = FFI.import(:ClearBackground, Nothing, (typeof(rl.Color),))
+rl.DrawText = FFI.import(:DrawText, Nothing, (Ptr{UInt8}, Int32, Int32, Int32, typeof(rl.Color)))
 
 drawing(k::Function) = @code (rl.BeginDrawing(); k(); rl.EndDrawing())
 
