@@ -11,7 +11,10 @@ using ..IR
 using ..Notation
 using ..Print
 
-public translate, compile, procedure, codegen
+public Header, translate, compile, procedure, codegen
+public Import, var"import", Struct, var"struct"
+
+# Translation
 
 struct Phi <: Function
         labels::Dict{IR.L,IR.V}
@@ -66,43 +69,82 @@ Translate the procedure from the IR into a subset of C99.
 """
 translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(c))
 
-struct Forward <: Function
-        procs::Dict{Symbol,IR.Proc}
-        structs::Dict{Symbol,IR.Struct}
-        Forward() = new(Dict(), Dict())
+# Imports
+
+@doc """
+	Import
+
+Abstract type for linked symbols.
+"""
+struct Import{T,Ts<:Tuple} <: IR.Link{T,Ts}
+        __symbol__::Symbol
 end
 
-(fwd::Forward)(::Type{Ptr{IR.Struct{Tag,NT}}}) where {Tag,NT} =
-        (fwd.structs[Tag] = IR.Struct{Tag,NT}(nothing); nothing)
-(fwd::Forward)(::Type{Ref{IR.Struct{Tag,NT}}}) where {Tag,NT} =
-        (fwd.structs[Tag] = IR.Struct{Tag,NT}(nothing); nothing)
-(fwd::Forward)(::Type{IR.Struct{Tag,NT}}) where {Tag,NT} =
-        (fwd.structs[Tag] = IR.Struct{Tag,NT}(nothing); nothing)
-(fwd::Forward)(::Type) = nothing
+@doc """
+	import(name, rettype, argtypes)
 
-(fwd::Forward)(c::IR.Code) = (fwd(IR.type(c)); IR.visit(c, fwd); nothing)
-(fwd::Forward)(c::IR.RHS) = fwd(IR.type(c))
-(fwd::Forward)(::Symbol) = nothing
-function (fwd::Forward)(c::IR.Proc)
-        fwd.(IR.type.(c.__cells__))
-        get!(fwd.procs, c.__symbol__) do
+Creates an `Import` named `name` from a function signature.
+"""
+function var"import"(s::Symbol, rettype::Type, argtypes::Tuple)
+        local cells = tuple([IR.R{ty}() for ty = argtypes]...)
+        Import{rettype,typeof(cells)}(s)
+end
+
+# Header
+
+struct Header <: Function
+        __name__::String
+        __procs__::Dict{Symbol,IR.Link}
+        __structs__::Dict{Symbol,Type}
+        Header() = new(".h", Dict(), Dict())
+        Header(name::String) = new(name, Dict(), Dict())
+end
+
+Base.setproperty!(hdr::Header, s::Symbol, v::IR.Link) =
+        setindex!(getfield(hdr, :__procs__), v, s)
+Base.setproperty!(hdr::Header, s::Symbol, v::Type) =
+        setindex!(getfield(hdr, :__structs__), v, s)
+Base.setindex!(hdr::Header, v, s::Symbol) =
+        setproperty!(hdr, s, v)
+
+Base.getproperty(hdr::Header, s::Symbol) =
+        get(getfield(hdr, :__procs__), s) do
+                get(getfield(hdr, :__structs__), s) do
+                        throw(KeyError(s))
+                end
+        end
+
+(hdr::Header)(::Type{Ptr{IR.Struct{Tag,NT}}}) where {Tag,NT} =
+        (hdr[Tag] = IR.Struct{Tag,NT}; nothing)
+(hdr::Header)(::Type{Ref{IR.Struct{Tag,NT}}}) where {Tag,NT} =
+        (hdr[Tag] = IR.Struct{Tag,NT}; nothing)
+(hdr::Header)(::Type{IR.Struct{Tag,NT}}) where {Tag,NT} =
+        (hdr[Tag] = IR.Struct{Tag,NT}; nothing)
+(hdr::Header)(::Type) = nothing
+(hdr::Header)(::Symbol) = nothing
+
+(hdr::Header)(c::IR.Code) = (hdr(IR.type(c)); IR.visit(c, hdr); nothing)
+(hdr::Header)(c::IR.RHS) = hdr(IR.type(c))
+function (hdr::Header)(c::IR.Proc)
+        hdr.(IR.type.(c.__cells__))
+        get!(getfield(hdr, :__procs__), c.__symbol__) do
                 local phi = Phi()
-                fwd(c.__proc__[])
+                hdr(c.__proc__[])
                 c.__proc__[] = translate(c.__proc__[], phi)
                 return c
         end
         nothing
 end
-(fwd::Forward)(c::IR.FnCall) =
-        (fwd(c.__keyword__); fwd(IR.type(c)); IR.visit(c, fwd); nothing)
-(fwd::Forward)(::Any) = nothing
+(hdr::Header)(c::IR.FnCall) =
+        (hdr(c.__keyword__); hdr(IR.type(c)); IR.visit(c, hdr); nothing)
+(hdr::Header)(::Any) = nothing
 
 @doc """
-	compile(proc [, fwd])
+	compile(proc [, hdr])
 
-Returns all used functions and structs for forward declaration.
+Returns all used procedures and structs for forward declaration.
 """
-compile(c::IR.Proc, fwd=Forward()) = (fwd(c); fwd)
+compile(c::IR.Proc, hdr=Header()) = (hdr(c); hdr)
 
 ## Show
 
@@ -137,7 +179,7 @@ end
 
 Writes the definiton of procedure or struct in C.
 """
-function codegen(io::IO, b::IR.Struct{Tag,NT}) where {Tag,NT}
+function codegen(io::IO, b::Type{IR.Struct{Tag,NT}}) where {Tag,NT}
         print(io, "struct $(Tag) { ")
         for (f, t) = zip(fieldnames(NT), fieldtypes(NT))
                 print(io, declare(t, f))

@@ -5,7 +5,7 @@
 # Copyright (C) 2025 Gabriel Domingues <gm@mail.tau.ac.il>
 #
 
-public let, init, mut, while, for
+public init, mut, var"let", var"while", var"for"
 
 # Extensions
 
@@ -83,14 +83,14 @@ end
 # Overloads
 
 Notation.bind(c::Code{T}, f::Function) where {T} =
-        bind(c, (Notation.arity(f) == 0) ? R{Nothing}() : R{T}() , f)
+        bind(c, (Notation.arity(f) == 0) ? R{Nothing}() : R{T}(), f)
 Notation.bind(c::CTE, f::Function) = Notation.apply(f, c.__val__)
 Notation.bind(c::Atom, f::Function) = Notation.apply(f, c)
 
 Notation.bind(c::Init{T}, f::Function) where {T} =
-	bind(cte(c.__init__), R{T}(), f)
+        bind(cte(c.__init__), R{T}(), f)
 Notation.bind(c::Mut{T}, f::Function) where {T} =
-	bind(c.__init__, M{T}(), f)
+        bind(c.__init__, M{T}(), f)
 
 Base.ifelse(bool::Code, iftrue, iffalse) = var"if"(bool, iftrue, iffalse)
 Base.ifelse(bool::CTE, iftrue, iffalse) = ifelse(bool.__val__, iftrue, iffalse)
@@ -102,9 +102,10 @@ Notation.if(bool::CTE, iftrue::Function) =
 Notation.if(bool::CTE, iftrue::Function, iffalse::Function) =
         Notation.if(bool.__val__, iftrue, iffalse)
 
-function (c::Proc{T,Ts})(args::Vararg{Code}) where {T,Ts}
-        @assert all(type.(args) .== type.(Ts.types)) "Type mismatch"
-        fncall(T, c, args...)
+function (c::Link{T,Ts})(args::Vararg) where {T,Ts}
+        fnargs = convert.(Code, args)
+        @assert all(type.(fnargs) .== type.(Ts.types)) "Type mismatch"
+        fncall(T, c, fnargs...)
 end
 
 (fn::Let)(args...) = genlet((a) -> fn.f(a...), collect(Code, args))
@@ -113,7 +114,7 @@ Notation.addr(c::Code, s...) = addr(c, s...)
 
 Base.getindex(c::Code, s...) = index(c, s...)
 Base.getindex(c::Rho{Ref{Ptr{T}}}, s::Code{Int}) where {T} = index(index(c), s)
-Base.getindex(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag, NT} = addr(c, s)
+Base.getindex(c::Rho{Ref{Struct{Tag,NT}}}, s::Symbol) where {Tag,NT} = addr(c, s)
 Base.getproperty(v::Code, s::Symbol) =
         startswith(string(s), "__") ? getfield(v, s) : Base.getindex(v, s)
 

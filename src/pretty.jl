@@ -43,7 +43,7 @@ typename(::Type{Ptr{T}}) where {T} = string(typename(T), "*")
 typename(::Type{Ref{T}}) where {T} = string(typename(T), "*")
 
 function pretty(io::IO, pt::Printer, c::IR.FnCall{T}) where {T}
-        if c.__keyword__ isa IR.Proc
+        if c.__keyword__ isa IR.Link
                 print(io, c.__keyword__.__symbol__)
                 print(io, "(")
                 for (i, c) = enumerate(c.__args__)

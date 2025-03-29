@@ -28,7 +28,9 @@ var"if"(bool::Bool, iftrue::Function, iffalse::Function) =
 addr(ref, index...) = getindex(ref, index...)
 ←(ref, val) = setindex!(ref, val)
 
-end
+end # module Notation
+
+# Imports
 
 include("IR.jl")
 include("macros.jl")
@@ -37,27 +39,39 @@ include("pretty.jl")
 include("C.jl")
 
 @doc """
-	compile(proc)
+	compile(procs; deps)
 
 Compiles a procedure into the corresponding C program as text.
 """
-function compile(procs::Vararg{IR.Proc})
+function compile(procs::Vararg{IR.Proc}; deps=C.Header[])
         io = IOBuffer()
-        print(io, "#include <stdbool.h>\n#include <stdint.h>\n\n")
-
-        fwd = C.Forward()
-        for proc = procs
-                C.compile(proc, fwd)
+        print(io, "#include <stdbool.h>\n#include <stdint.h>\n")
+        for dep = deps
+                print(io, "#include ")
+                local name = getfield(dep, :__name__)
+                if startswith(name, '<')
+                        print(io, name)
+                else
+                        print(io, repr(name))
+                end
         end
-        for (k, v) = fwd.structs
+        print(io, '\n')
+
+        hdr = C.Header()
+        for proc = procs
+                C.compile(proc, hdr)
+        end
+        structs = map(dep -> keys(getfield(dep, :__structs__)), deps)
+        for (k, v) = getfield(hdr, :__structs__)
+                any(st -> k in st, structs) && continue
                 C.codegen(io, v)
                 print(io, '\n')
         end
-        for (k, v) = fwd.procs
+        for (k, v) = getfield(hdr, :__procs__)
                 C.procedure(io, v)
                 print(io, ";\n")
         end
-        for (k, v) = fwd.procs
+        for (k, v) = getfield(hdr, :__procs__)
                 C.codegen(io, v)
                 print(io, '\n')
         end

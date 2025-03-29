@@ -11,9 +11,10 @@ export Atom, R, CTE
 
 using ..Notation
 
-public Code, RHS, Rho, L, V, M, BreakContinue, Break, Continue
-public Bind, Blk, Ret, Proc, If, Loop, FnCall, Index, Write, Struct
-public visit, type, struct, block, loop, if, fncall, write, index, proc, genlet
+public Code, RHS, Rho, Link, Proc, L, V, M, BreakContinue, Break, Continue
+public Bind, Blk, Ret, If, Loop, FnCall, Index, Write, Struct
+public block, loop, fncall, write, index, if
+public visit, type, var"struct", proc, genlet
 
 @doc """
 	newid()
@@ -36,6 +37,30 @@ global newmutable = newid()
 Abstract type that represents a chunk of IR code that yields a value of type `T`.
 """
 abstract type Code{T} end
+
+@doc """
+	Link{T, Ts}
+
+Abstract type for linked symbols.
+"""
+abstract type Link{T,Ts} end
+
+@doc """
+	Proc{T, Ts} <: Link{T, Ts}
+
+A procedure that returns a value of type `T` with arguments of types `Ts`, where `Ts` is a tuple of register types.
+The constructor guarantees the code block is lexically closed.
+"""
+struct Proc{T,Ts<:Tuple} <: Link{T,Ts}
+        __symbol__::Symbol
+        __cells__::Ts
+        __proc__::Ref{Code{T}}
+        Proc(s, cells::Ts, r::Code{T}) where {T,Ts} =
+                new{T,Ts}(s, cells, Ref{Code{T}}(assert_closed(r, cells)))
+end
+Base.setindex!(proc::Proc, f::Function) =
+        (proc.__proc__[] = assert_closed(f(proc.__cells__...), proc.__cells__))
+Base.getindex(proc::Proc) = proc.__proc__[]
 
 @doc """
 	L
@@ -73,7 +98,6 @@ abstract type Atom{T} <: Rho{T} end
 
 A register of type `T`. This is a local immutable variable.
 We deduplicate `R{Nothing}()` to a unique fixed id.
-
 """
 struct R{T} <: Atom{T}
         __id__::UInt16
@@ -138,23 +162,6 @@ struct Ret{T} <: RHS{Nothing}
 end
 
 @doc """
-	Proc{T, Ts}
-
-A procedure that returns a value of type `T` with arguments of types `Ts`, where `Ts` is a tuple of register types.
-The constructor guarantees the code block is lexically closed.
-"""
-struct Proc{T,Ts<:Tuple}
-        __symbol__::Symbol
-        __cells__::Ts
-        __proc__::Ref{Code{T}}
-        Proc(s, cells::Ts, r::Code{T}) where {T,Ts} =
-                new{T,Ts}(s, cells, Ref{Code{T}}(assert_closed(r, cells)))
-end
-Base.setindex!(proc::Proc, f::Function) =
-        (proc.__proc__[] = assert_closed(f(proc.__cells__...), proc.__cells__))
-Base.getindex(proc::Proc) = proc.__proc__[]
-
-@doc """
 	If{T} <: Code{T}
 
 An `if` expression.
@@ -192,7 +199,7 @@ end
 An expression for function call, this included builtin operators and procedures.
 """
 struct FnCall{T} <: RHS{T}
-        __keyword__::Union{Symbol,Proc}
+        __keyword__::Union{Symbol,Link}
         __args__::Vector{Atom}
 end
 
@@ -301,10 +308,9 @@ const TYPES = (Int32, Int64, UInt8, Bool, Nothing, Ptr{UInt8})
 @doc """
 	Struct{Tag, NT}
 
-A type-level marker for a tagged structure in C.
+A type-level marker for a structure type in C.
 """
 struct Struct{Tag,NT<:NamedTuple}
-        Struct{Tag,NT}(::Nothing) where {Tag,NT<:NamedTuple} = new{Tag,NT}()
         function Struct{Tag,NT}(args...) where {Tag,NT<:NamedTuple}
                 local inits = convert.(Code, args)
                 @assert all(type.(inits) .== fieldtypes(NT)) "Type mismatch"
@@ -389,7 +395,7 @@ var"if"(bool::Code{Bool}, iftrue::Code) = var"if"(bool, iftrue, CTE{Nothing}(not
 Creates a `FnCall` expression in ANF.
 """
 fncall(::Type{T}, keyword, args::Vararg) where {T} =
-	genlet(a -> FnCall{T}(keyword, a), collect(Code, args))
+        genlet(a -> FnCall{T}(keyword, a), collect(Code, args))
 
 @doc """
 	addr(ref, idx...)
@@ -450,11 +456,11 @@ Converts the function call to ANF, i.e., performs let-insertion.
 """
 genlet(f::Function, a::Code) = Notation.bind(a, r -> f(convert(Code, r)))
 genlet(f::Function, a1::Code, a2::Code) =
-	Notation.bind(a1, r1 ->
-		Notation.bind(a2, r2 ->
-		       f(convert(Code, r1), convert(Code, r2))))
+        Notation.bind(a1, r1 ->
+                Notation.bind(a2, r2 ->
+                        f(convert(Code, r1), convert(Code, r2))))
 genlet(f::Function, args::Vararg{Code}) =
-	genlet((a) -> f(a...), collect(Code, args))
+        genlet((a) -> f(a...), collect(Code, args))
 function genlet(f::Function, args::Vector{Code})
         local tail = reverse(args)
         local head = Code[]
@@ -462,12 +468,12 @@ function genlet(f::Function, args::Vector{Code})
         function recur()
                 if isempty(tail)
                         @assert length(head) == length(args) "$(args => head)"
-			return f(head)
+                        return f(head)
                 end
-		Notation.bind(pop!(tail), function (b)
-			push!(head, b)
-			recur()
-		end)
+                Notation.bind(pop!(tail), function (b)
+                        push!(head, b)
+                        recur()
+                end)
         end
         return recur()
 end
