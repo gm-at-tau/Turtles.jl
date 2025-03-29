@@ -57,6 +57,7 @@ end
                         dest[i] = src[i]
                 end
         end
+        @info compile(memory_copy, swapvec; header_only=true)
         cc("test_pointer", memory_copy, swapvec)
 end
 

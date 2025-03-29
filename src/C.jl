@@ -80,9 +80,8 @@ translate(c::IR.Code, phi::Phi=Phi()) = flat(phi(c))
 function (hdr::FFI.Header)(c::IR.Proc)
         hdr.(IR.type.(c.__cells__))
         get!(getfield(hdr, :__procs__), c.__symbol__) do
-                local phi = Phi()
+                c.__proc__[] = translate(c.__proc__[])
                 hdr(c.__proc__[])
-                c.__proc__[] = translate(c.__proc__[], phi)
                 return c
         end
         nothing
@@ -92,11 +91,21 @@ end
 (hdr::FFI.Header)(::Any) = nothing
 
 @doc """
-	compile(proc [, hdr])
+	compile(proc [, hdr]; header_only)
 
 Returns all used procedures and structs for forward declaration.
 """
-compile(c::IR.Proc, hdr=FFI.Header()) = (hdr(c); hdr)
+function compile(c::IR.Proc, hdr=FFI.Header(); header_only=false)
+        if header_only
+                c.__proc__[] = translate(c.__proc__[])
+                hdr(IR.type(c.__proc__[]))
+                hdr.(IR.type.(c.__cells__))
+                hdr[c.__symbol__] = c
+        else
+                hdr(c)
+        end
+        hdr
+end
 
 ## Show
 

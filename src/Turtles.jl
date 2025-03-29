@@ -40,13 +40,13 @@ include("pretty.jl")
 include("C.jl")
 
 @doc """
-	compile(procs; deps)
+	compile(procs; deps, header_only)
 
 Compiles a procedure into the corresponding C program as text.
 """
-function compile(procs::Vararg{IR.Proc}; deps=FFI.Header[])
+function compile(procs::Vararg{IR.Proc}; deps=FFI.Header[], header_only=false)
         io = IOBuffer()
-        print(io, "#include <stdbool.h>\n#include <stdint.h>\n")
+        print(io, "#include <stdbool.h>\n#include <stdint.h>")
         for dep = deps
                 print(io, "\n#include ")
                 local name = getfield(dep, :__name__)
@@ -62,19 +62,22 @@ function compile(procs::Vararg{IR.Proc}; deps=FFI.Header[])
         for proc = procs
                 C.compile(proc, hdr)
         end
-        structs = map(dep -> keys(getfield(dep, :__structs__)), deps)
+        structs = mapreduce(dep -> keys(getfield(dep, :__structs__)),
+                union, deps; init=Set())
         for (k, v) = getfield(hdr, :__structs__)
-                any(st -> k in st, structs) && continue
+                (k in structs) && continue
                 C.codegen(io, v)
                 print(io, '\n')
         end
-        for (k, v) = getfield(hdr, :__procs__)
+        for (_, v) = getfield(hdr, :__procs__)
                 C.procedure(io, v)
                 print(io, ";\n")
         end
-        for (k, v) = getfield(hdr, :__procs__)
-                C.codegen(io, v)
-                print(io, '\n')
+        if !header_only
+                for (_, v) = getfield(hdr, :__procs__)
+                        C.codegen(io, v)
+                        print(io, '\n')
+                end
         end
         String(take!(io))
 end
