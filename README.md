@@ -4,7 +4,10 @@
 
 A code generation library.
 
-This library allows to overload a version of Julia's syntax into function calls to generate C99 code.
+## Usage
+
+This library allows to overload (via `@code` and `@proc` macro) a subset of Julia's syntax into function calls to generate C99 code.
+These function calls are overloaded on the `IR` module.
 
 ```julia
 using Turtles
