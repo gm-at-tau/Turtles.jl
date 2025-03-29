@@ -5,13 +5,9 @@
 # Copyright (C) 2025 Gabriel Domingues <gm@mail.tau.ac.il>
 #
 
-if !isdefined(@__MODULE__, :Turtles)
-        include("../src/Turtles.jl")
-end
-
 module PEG
 
-using ..Turtles
+using Turtles
 
 abstract type Free end
 
