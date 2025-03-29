@@ -5,9 +5,42 @@
 # Copyright (C) 2025 Gabriel Domingues <gm@mail.tau.ac.il>
 #
 
-# Raylib example: https://github.com/raysan5/raylib
 
 using Turtles
+
+cd("test")
+CC = `cc -O2 -std=c99 -Wall -Wextra -Wno-pointer-sign -Wno-unused-variable -Wno-unused-label`
+
+const lib = FFI.Header("<stdlib.h>")
+const mem = FFI.Header("<string.h>")
+const io = FFI.Header("<stdio.h>")
+
+lib.malloc = FFI.import(:malloc, Ptr{UInt8}, (Int64,))
+lib.free = FFI.import(:free, Nothing, (Ptr{UInt8},))
+mem.memcpy = FFI.import(:memcpy, Ptr{UInt8}, (Ptr{UInt8}, Ptr{UInt8}, Int64))
+mem.memset = FFI.import(:memset, Ptr{UInt8}, (Ptr{UInt8}, UInt8, Int64))
+io.puts = FFI.import(:puts, Int32, (Ptr{UInt8},))
+
+hello = "Hello, world!"
+@proc function main()
+        n := IR.init(1024)
+        array := lib.malloc(n)
+        Turtles.defer(lib.free(array))
+	# N.B. must explicitly ignore return
+        _ := mem.memset(array, 0x0, n)
+	_ := mem.memcpy(array, pointer(hello), length(hello))
+	_ := io.puts(array)
+        Int32(0)
+end
+
+filename = "memtest"
+code = @time "compile main" compile(main; deps=[lib, mem, io])
+@time "write to file" write("$filename.c", code)
+@time "C compiler" run(`$CC $filename.c -o $filename.out`)
+run(`./$filename.out`)
+run(`rm $filename.c $filename.out`)
+
+## Raylib example: https://github.com/raysan5/raylib
 
 # N.B. Path to raylib in your system
 const rl = FFI.Header("<raylib/raylib.h>")
@@ -39,12 +72,9 @@ drawing(k::Function) = @code (rl.BeginDrawing(); k(); rl.EndDrawing())
         Int32(0)
 end
 
-cd("test")
-
 filename = "rltest"
 code = @time "compile main" compile(main; deps=[rl])
 @time "write to file" write("$filename.c", code)
-CC = `cc -O2 -std=c99 -Wall -Wextra -Wno-unused-variable -Wno-unused-label`
 @time "C compiler" run(`$CC $filename.c -lraylib -lm -o $filename.out`)
 run(`./$filename.out`)
 run(`rm $filename.c $filename.out`)

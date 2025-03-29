@@ -48,7 +48,7 @@ function compile(procs::Vararg{IR.Proc}; deps=FFI.Header[])
         io = IOBuffer()
         print(io, "#include <stdbool.h>\n#include <stdint.h>\n")
         for dep = deps
-                print(io, "#include ")
+                print(io, "\n#include ")
                 local name = getfield(dep, :__name__)
                 if startswith(name, '<')
                         print(io, name)
@@ -56,7 +56,7 @@ function compile(procs::Vararg{IR.Proc}; deps=FFI.Header[])
                         print(io, repr(name))
                 end
         end
-        print(io, '\n')
+        print(io, "\n\n")
 
         hdr = FFI.Header()
         for proc = procs
