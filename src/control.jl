@@ -53,6 +53,6 @@ guard(bool::IR.Code{Bool}, ifnot::IR.Code) = Guard(bool=bool, ifnot=ifnot)
 
 function Notation.bind(gd::Guard, f::Function)
         local ifpass = Notation.apply(f)
-        Notation.if(gd.bool, ifpass, gd.ifnot)
+        IR.if(gd.bool, ifpass, gd.ifnot)
 end
 
