@@ -1,4 +1,7 @@
 # Turtles.jl
+
+[![Build Status](https://github.com/gm-at-tau/Turtles.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/gm-at-tau/Turtles.jl/actions/workflows/CI.yml?query=branch%3Amain)
+
 A code generation library
 
 ## Requirements
