@@ -2,7 +2,55 @@
 
 [![Build Status](https://github.com/gm-at-tau/Turtles.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/gm-at-tau/Turtles.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
-A code generation library
+A code generation library.
+
+This library allows to overload a version of Julia's syntax into function calls to generate C99 code.
+
+```julia
+using Turtles
+@code IR.block() do blk # blk handles non-local returns
+        a := IR.mut(0) # mutable variables with `mut`
+        IR.while(a[] < 32) do # overload `while`
+                r := a[] + 1 # local variable with `:=`
+                a[] = r
+                if (a[] > 64) # `if` is overloaded
+                    blk.return(64) # early return
+                end
+        end
+        a[] # default return
+end
+```
+
+This generates a data-structure representing the program.
+We can transform the data-structure for a procedure into a C99 program.
+
+```julia
+using Turtles
+@proc function max3(x::IR.R{Int}, y::IR.R{Int}, z::IR.R{Int})
+        mxy := max(x, y)
+        max(mxy, z)
+end
+compile(max3) # generates C99 program with `max3` function
+```
+
+We can even overload the functions in `Notation.bind` to generate more interesting code.
+
+```julia
+using Turtles
+
+struct Guard
+        bool::IR.Code{Bool}
+        ifnot::IR.Code
+end
+function Turtles.Notation.bind(gd::Guard, f::Function)
+        IR.if(gd.bool, f(), gd.ifnot)
+end
+
+@proc function decrement(x::IR.R{Int})
+    Guard(x > 0, 0) # call to `Notation.bind` is overloaded
+    x - 1
+end
+```
 
 ## Requirements
 
