@@ -31,6 +31,7 @@ var"struct"(tag::Symbol, fields::Vararg{Pair{Symbol,DataType}}) =
 
 Base.pairs(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} = NT
 Base.fieldnames(::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} = fieldnames(NT)
+Base.zero(st::Type{Struct{Tag,NT}}) where {Tag,NT<:NamedTuple} = st()(zero.(fieldtypes(NT))...)
 Base.zero(st::Struct{Tag,NT}) where {Tag,NT<:NamedTuple} = st(zero.(fieldtypes(NT))...)
 
 # Imports

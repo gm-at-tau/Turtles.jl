@@ -363,6 +363,7 @@ fncall(::Type{T}, keyword, args::Vararg) where {T} =
 Creates a `Index{Ref}` expression in ANF.
 """
 addr(c::Code, s) = genlet((a, h) -> addr(h, a), s, c) # N.B. opposite order
+addr(c::Code, s::Symbol) = genlet(h -> addr(h, s), c)
 addr(c::Rho, s::Int) = addr(c, cte(s))
 addr(c::Rho{Ref{T}}) where {T} = Index{Ref{T}}(c, nothing)
 addr(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{Ref{T}}(c, a), s)
@@ -378,6 +379,7 @@ Creates a `Index` expression in ANF.
 """
 index(c::Code, s...) =
         genlet(a -> genlet(h -> index(h, a...), c), collect(Code, s))
+index(c::Code, s::Symbol) = genlet(h -> index(h, s), c)
 index(c::Rho{Ref{T}}) where {T} = Index{T}(c, nothing)
 index(c::Rho, s::Int) = index(c, cte(s))
 index(c::Rho{Ptr{T}}, s::Code{Int}) where {T} = genlet(a -> Index{T}(c, a), s)
